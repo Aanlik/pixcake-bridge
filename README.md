@@ -4,7 +4,7 @@
 生成待精修 RAW，并将像素蛋糕导出的成片替换回原画廊。像素蛋糕无需 API。
 PicPeak 中文 Fork 保留官方 stable 历史，Bridge 的摄影业务自动化不进入 PicPeak。
 
-当前版本：Bridge `0.1.0`，PicPeak `3.134.1-zh.1`。
+当前版本：Bridge `0.1.0`，PicPeak `3.134.1-zh.3`。
 这是可构建、可运行的第一版；实际 fnOS、FN Connect 和像素蛋糕验收仍需设备。
 测试证据见 [测试计划](docs/testing.md) 和 [验证报告](docs/verification.md)。
 
@@ -246,3 +246,7 @@ Bridge 初始模型与数据库连接不绑定 SQLite，迁移 PostgreSQL 时安
 与 NAS 断电尚需现场验收；专业长尾文案属于机器辅助初译；原始 hardlink inode 需要
 额外权限保证；上游替换会更新拍摄 EXIF，按拍摄时间排序时需像素蛋糕保留原 EXIF。
 本项目不会伪造这些现场验证结果。
+
+### 本地账号与链接分享
+
+当前中文 AIO 使用用户名登录，客户选片不填邮箱，发布后复制链接自行交付给客户；SMTP 与邮件入口关闭。本地管理员在后台创建，初始密码私下交付。邮件依赖的门户与合同交付模块不启用，未提供短信/微信自动发送。详情见同级 PicPeak `docs/zh-CN-no-email.md`。

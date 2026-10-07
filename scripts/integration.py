@@ -65,7 +65,7 @@ async def main(args):
         # into or alter an existing photographer's installation.
         token_path = docker("exec", args.container, "cat", "/data/db/SETUP_TOKEN")
         password = "FixtureA9!" + secrets.token_hex(16)
-        result = await admin.post("/api/setup/admin", json={"token": token_path, "email": "fixture@example.com", "password": password})
+        result = await admin.post("/api/setup/admin", json={"token": token_path, "email": "fixture@example.com", "username": "fixture", "password": password})
         assert result.status_code == 201, f"Fixture setup failed: HTTP {result.status_code}; use a fresh test volume"
         language = await admin.put("/api/admin/settings/general", json={"general_default_language": "zh-CN"})
         assert language.status_code == 200, language.text
