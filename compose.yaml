@@ -1,0 +1,87 @@
+name: pixcake
+services:
+  picpeak:
+    image: ${PICPEAK_IMAGE:-picpeak-zh:3.134.1-zh.1}
+    build:
+      context: ../picpeak-zh
+      dockerfile: Dockerfile.aio
+      args:
+        VITE_DEFAULT_LANGUAGE: ${PICPEAK_DEFAULT_LANGUAGE:-zh-CN}
+    environment:
+      PORT: "3000"
+      DATABASE_CLIENT: sqlite3
+      EXTERNAL_MEDIA_ROOT: /external-media
+      EXTERNAL_MEDIA_WATCH_POLLING: "true"
+      EXTERNAL_MEDIA_WATCH_SWEEP_INTERVAL_MS: "60000"
+      TZ: Asia/Shanghai
+    ports:
+      - "${LAN_BIND_IP:-127.0.0.1}:${PICPEAK_PORT:-3000}:3000"
+    volumes:
+      - picpeak-data:/data
+      - type: bind
+        source: ${PHOTO_PROJECT:?填写摄影项目绝对路径}/02_PROOF
+        target: /external-media/${PROJECT_FOLDER:-示例项目}
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [photos]
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+  bridge:
+    image: ${BRIDGE_IMAGE:-pixcake-bridge:0.1.0}
+    build: .
+    environment:
+      PICPEAK_URL: http://picpeak:3000
+      PICPEAK_TOKEN: ${PICPEAK_TOKEN:?填写 Public API Token}
+      BRIDGE_ADMIN_PASSWORD: ${BRIDGE_ADMIN_PASSWORD:?填写管理密码}
+      DATABASE_URL: sqlite:////data/bridge.db
+      PROJECTS_FILE: /config/projects.json
+      POLL_SECONDS: ${POLL_SECONDS:-30}
+      STABLE_SECONDS: ${STABLE_SECONDS:-10}
+      MAX_FINAL_BYTES: ${MAX_FINAL_BYTES:-104857600}
+      HISTORY_KEEP: ${HISTORY_KEEP:-3}
+      RAW_MATERIALIZE_MODE: ${RAW_MATERIALIZE_MODE:-auto}
+      WATCHFILES_FORCE_POLLING: "true"
+      TZ: Asia/Shanghai
+    ports:
+      - "${LAN_BIND_IP:-127.0.0.1}:${BRIDGE_PORT:-8080}:8080"
+    volumes:
+      - bridge-data:/data
+      - ./projects.json:/config/projects.json:ro
+      - type: bind
+        source: ${PHOTO_PROJECT}/01_RAW
+        target: /raw/${PROJECT_FOLDER:-示例项目}
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${PHOTO_PROJECT}/03_SELECTED_RAW
+        target: /selected/${PROJECT_FOLDER:-示例项目}
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${PHOTO_PROJECT}/04_FINAL
+        target: /final/${PROJECT_FOLDER:-示例项目}
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${PHOTO_PROJECT}/05_HISTORY
+        target: /history/${PROJECT_FOLDER:-示例项目}
+        bind:
+          create_host_path: false
+    networks: [photos]
+    depends_on:
+      picpeak:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+networks:
+  photos:
+    driver: bridge
+volumes:
+  picpeak-data:
+  bridge-data:

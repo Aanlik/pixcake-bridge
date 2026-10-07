@@ -1,0 +1,73 @@
+name: Bridge tests and real PicPeak integration
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.7.8'
+      - run: uv sync --frozen --python 3.12 --extra test
+      - run: uv run pytest -q
+      - name: Compose structure and deployment policy
+        env:
+          PHOTO_PROJECT: /tmp/shoot
+          PICPEAK_TOKEN: pp_live_ci_placeholder
+          BRIDGE_ADMIN_PASSWORD: ci-placeholder-password
+        run: uv run python scripts/preflight.py
+  docker-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: PicPeak/picpeak
+          ref: 5fc54d9a5e17a7f054c926922a6f820f3c98eda2
+          path: upstream
+      - name: Apply narrow Chinese-name compatibility patch to fixture
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('upstream/backend/src/utils/feedbackValidation.js')
+          old = r"/^[a-zA-Z0-9\s\-'.]+$/"
+          new = r"/^[\p{L}\p{M}\p{N} \-'.·]+$/u"
+          text = p.read_text()
+          assert old in text
+          p.write_text(text.replace(old, new))
+          PY
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: upstream
+          file: upstream/Dockerfile.aio
+          tags: picpeak-zh:integration
+          load: true
+          cache-from: type=gha,scope=integration-picpeak
+          cache-to: type=gha,mode=max,scope=integration-picpeak
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: pixcake-bridge:0.1.0
+          load: true
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.7.8'
+      - run: uv sync --frozen --python 3.12 --extra test
+      - name: Start real PicPeak with read-only proof mount
+        run: |
+          mkdir -p /tmp/pixcake-fixture/proofs/shoot
+          docker run -d --name pixcake-ci-picpeak -p 127.0.0.1:19300:3000 -e PORT=3000 -e EXTERNAL_MEDIA_ROOT=/external-media -v /tmp/pixcake-fixture/proofs:/external-media:ro picpeak-zh:integration
+      - name: Customer selection and replacement E2E
+        run: uv run python scripts/integration.py --container pixcake-ci-picpeak --root /tmp/pixcake-fixture --count 100 --report integration-report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: real-picpeak-integration
+          path: integration-report.json
+      - if: always()
+        run: docker rm -f pixcake-ci-picpeak || true

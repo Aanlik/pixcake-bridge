@@ -38,7 +38,6 @@ class Config:
     admin_password: str = ""
     poll_seconds: float = 30
     stable_seconds: float = 10
-    unknown_seconds: float = 120
     max_bytes: int = 100 * 1024 * 1024
     history_keep: int = 3
     materialize_mode: str = "auto"
@@ -54,7 +53,6 @@ class Config:
             admin_password=os.getenv("BRIDGE_ADMIN_PASSWORD", ""),
             poll_seconds=float(os.getenv("POLL_SECONDS", "30")),
             stable_seconds=float(os.getenv("STABLE_SECONDS", "10")),
-            unknown_seconds=float(os.getenv("UNKNOWN_SECONDS", "120")),
             max_bytes=int(os.getenv("MAX_FINAL_BYTES", str(100 * 1024 * 1024))),
             history_keep=int(os.getenv("HISTORY_KEEP", "3")),
             materialize_mode=os.getenv("RAW_MATERIALIZE_MODE", "auto"),
@@ -72,4 +70,3 @@ class Config:
         for p in cfg.projects:
             p.validate()
         return cfg
-

@@ -125,8 +125,8 @@ def snapshot(source: Path, dest: Path, max_bytes: int):
         after = source.stat()
         if (before.st_size, before.st_mtime_ns, before.st_ino) != (after.st_size, after.st_mtime_ns, after.st_ino):
             raise ValueError("FINAL 正在写入，稍后重试")
+        dest.chmod(0o444)
         return sha256(dest)
     except Exception:
         dest.unlink(missing_ok=True)
         raise
-

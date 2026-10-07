@@ -20,7 +20,7 @@ class PicPeak:
         await self.http.aclose()
 
     async def photos(self, event_id: int):
-        photos, page, pages = [], 1, 1
+        photos, page, pages, expected = [], 1, 1, None
         while page <= pages:
             response = None
             for attempt in range(3):
@@ -42,6 +42,11 @@ class PicPeak:
                         pass
                 await asyncio.sleep(delay)
             payload = response.json()
+            total = payload["pagination"].get("filtered")
+            if total is not None:
+                if expected is not None and total != expected:
+                    raise ValueError("PicPeak 分页期间照片数量变化，稍后重试")
+                expected = total
             photos.extend(payload["photos"])
             pages = int(payload["pagination"]["pages"])
             if pages > 10000:
@@ -49,6 +54,8 @@ class PicPeak:
             page += 1
         if len({p["id"] for p in photos}) != len(photos):
             raise ValueError("PicPeak 分页期间列表变化，拒绝使用不完整选片快照")
+        if expected is not None and len(photos) != expected:
+            raise ValueError("PicPeak 分页不完整，拒绝修改选片文件")
         return photos
 
     async def replace(self, event_id: int, photo_id: int, file: Path, filename: str):
