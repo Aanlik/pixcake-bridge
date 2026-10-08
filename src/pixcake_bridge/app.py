@@ -69,11 +69,12 @@ def create_app(config=None, client=None, start_workers=True):
                 deliveries = list(s.scalars(select(Delivery).join(Photo).where(Photo.project_id == p.id)))
                 summary = {
                     "客户已选": sum(x.selected for x in photos),
+                    "追加选片": sum(x.selected and x.added_during_editing for x in photos),
                     "RAW已匹配": sum(bool(x.raw_path) for x in photos),
                     "待精修": sum(bool(x.selected_path) and not x.delivery_hash for x in photos),
                     "已精修": len({x.photo_pk for x in deliveries}),
                     "已同步": sum(bool(x.delivery_hash) for x in photos),
-                    "返修": sum(x.attempts > 0 for x in deliveries) - len({x.photo_pk for x in deliveries if x.attempts > 0}),
+                    "返修": sum(x.state == "SUCCESS" for x in deliveries) - len({x.photo_pk for x in deliveries if x.state == "SUCCESS"}),
                     "取消待确认": sum(x.cancelled and bool(x.selected_path) for x in photos),
                     "异常": sum(bool(x.error) for x in photos) + sum(x.state in {"FAILED", "UNKNOWN"} for x in deliveries),
                 }

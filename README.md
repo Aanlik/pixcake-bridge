@@ -4,7 +4,7 @@
 生成待精修 RAW，并将像素蛋糕导出的成片替换回原画廊。像素蛋糕无需 API。
 PicPeak 中文 Fork 保留官方 stable 历史，Bridge 的摄影业务自动化不进入 PicPeak。
 
-当前版本：Bridge `0.1.0`，PicPeak `3.134.1-zh.3`。
+当前版本：Bridge `0.1.0`，PicPeak `3.134.1-zh.4`。
 这是可构建、可运行的第一版；实际 fnOS、FN Connect 和像素蛋糕验收仍需设备。
 测试证据见 [测试计划](docs/testing.md) 和 [验证报告](docs/verification.md)。
 

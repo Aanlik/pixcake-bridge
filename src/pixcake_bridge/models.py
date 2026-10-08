@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, event
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
@@ -30,6 +30,7 @@ class Photo(Base):
     photo_id: Mapped[int] = mapped_column(Integer)
     source_filename: Mapped[str] = mapped_column(String(512))
     selected: Mapped[bool] = mapped_column(Boolean, default=False)
+    added_during_editing: Mapped[bool] = mapped_column(Boolean, default=False)
     cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
     raw_path: Mapped[str | None] = mapped_column(Text)
     selected_path: Mapped[str | None] = mapped_column(Text)
@@ -81,4 +82,7 @@ def database(url):
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=30000")
     Base.metadata.create_all(engine)
+    if "added_during_editing" not in {c["name"] for c in inspect(engine).get_columns("photos")}:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE photos ADD COLUMN added_during_editing BOOLEAN NOT NULL DEFAULT FALSE"))
     return engine, sessionmaker(engine, expire_on_commit=False)

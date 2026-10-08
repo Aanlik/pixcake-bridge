@@ -1,6 +1,6 @@
 FROM python:3.12.14-slim-bookworm
 LABEL org.opencontainers.image.title="PixCake Bridge" \
-      org.opencontainers.image.version="0.1.0" \
+      org.opencontainers.image.version="0.1.1" \
       org.opencontainers.image.licenses="MIT"
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app

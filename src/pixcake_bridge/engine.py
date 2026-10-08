@@ -92,6 +92,8 @@ class Engine:
                                 # photographer's own green triage selecting RAW.
                                 was_selected = photo.selected
                                 photo.selected = item.get("color_label") == "green"
+                                if photo.selected and not was_selected and project.last_sync is not None and project.stage in {"EDITING", "DELIVERED"}:
+                                    photo.added_during_editing = True
                                 photo.cancelled = not photo.selected and (was_selected or photo.cancelled or bool(photo.selected_path))
                                 if counts[stem_key(source)] != 1:
                                     raise ValueError("Proof stem 冲突，无法唯一映射 RAW/FINAL")

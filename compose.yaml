@@ -1,7 +1,7 @@
 name: pixcake
 services:
   picpeak:
-    image: ${PICPEAK_IMAGE:-picpeak-zh:3.134.1-zh.3}
+    image: ${PICPEAK_IMAGE:-picpeak-zh:3.134.1-zh.4}
     build:
       context: ../picpeak-zh
       dockerfile: Dockerfile.aio
@@ -9,6 +9,9 @@ services:
         VITE_DEFAULT_LANGUAGE: ${PICPEAK_DEFAULT_LANGUAGE:-zh-CN}
     environment:
       PORT: "3000"
+      NO_EMAIL_MODE: "true"
+      PIXCAKE_BRIDGE_URL: http://bridge:8080
+      PIXCAKE_BRIDGE_PASSWORD: ${BRIDGE_ADMIN_PASSWORD:?填写管理密码}
       DATABASE_CLIENT: sqlite3
       EXTERNAL_MEDIA_ROOT: /external-media
       EXTERNAL_MEDIA_WATCH_POLLING: "true"
@@ -28,7 +31,7 @@ services:
     restart: unless-stopped
     security_opt: [no-new-privileges:true]
   bridge:
-    image: ${BRIDGE_IMAGE:-pixcake-bridge:0.1.0}
+    image: ${BRIDGE_IMAGE:-pixcake-bridge:0.1.1}
     build: .
     environment:
       PICPEAK_URL: http://picpeak:3000
