@@ -1,90 +1,78 @@
 name: pixcake
 services:
   picpeak:
-    image: ${PICPEAK_IMAGE:-picpeak-zh:3.134.1-zh.5}
+    image: ${STACK_IMAGE:-picpeak-pixcake:3.134.1-zh.6-bridge.0.1.1}
     build:
-      context: ../picpeak-zh
-      dockerfile: Dockerfile.aio
+      context: .
+      dockerfile: Dockerfile.integrated
       args:
-        VITE_DEFAULT_LANGUAGE: ${PICPEAK_DEFAULT_LANGUAGE:-zh-CN}
+        PICPEAK_BASE: ${PICPEAK_BASE:-picpeak-zh:3.134.1-zh.6}
     environment:
-      PORT: "3000"
-      NO_EMAIL_MODE: "true"
-      PIXCAKE_BRIDGE_URL: http://bridge:8080
+      PORT: '3000'
+      NO_EMAIL_MODE: 'true'
+      PIXCAKE_BRIDGE_URL: http://127.0.0.1:8080
       PIXCAKE_BRIDGE_PASSWORD: ${BRIDGE_ADMIN_PASSWORD:?填写管理密码}
       DATABASE_CLIENT: sqlite3
       EXTERNAL_MEDIA_ROOT: /external-media
-      EXTERNAL_MEDIA_WATCH_POLLING: "true"
-      EXTERNAL_MEDIA_WATCH_SWEEP_INTERVAL_MS: "60000"
+      EXTERNAL_MEDIA_WATCH_POLLING: 'true'
+      EXTERNAL_MEDIA_WATCH_SWEEP_INTERVAL_MS: '60000'
       TZ: Asia/Shanghai
-    ports:
-      - "${LAN_BIND_IP:-127.0.0.1}:${PICPEAK_PORT:-3000}:3000"
-    volumes:
-      - picpeak-data:/data
-      - type: bind
-        source: ${PHOTO_PROJECT:?填写摄影项目绝对路径}/02_PROOF
-        target: /external-media/${PROJECT_FOLDER:-示例项目}
-        read_only: true
-        bind:
-          create_host_path: false
-    networks: [photos]
-    restart: unless-stopped
-    security_opt: [no-new-privileges:true]
-  bridge:
-    image: ${BRIDGE_IMAGE:-pixcake-bridge:0.1.1}
-    build: .
-    environment:
-      PICPEAK_URL: http://picpeak:3000
-      PICPEAK_TOKEN: ${PICPEAK_TOKEN:?填写 Public API Token}
+      PICPEAK_URL: http://127.0.0.1:3000
+      PICPEAK_TOKEN: ${PICPEAK_TOKEN:-}
       BRIDGE_ADMIN_PASSWORD: ${BRIDGE_ADMIN_PASSWORD:?填写管理密码}
-      DATABASE_URL: sqlite:////data/bridge.db
+      DATABASE_URL: sqlite:////bridge-data/bridge.db
       PROJECTS_FILE: /config/projects.json
       POLL_SECONDS: ${POLL_SECONDS:-30}
       STABLE_SECONDS: ${STABLE_SECONDS:-10}
       MAX_FINAL_BYTES: ${MAX_FINAL_BYTES:-104857600}
       HISTORY_KEEP: ${HISTORY_KEEP:-3}
       RAW_MATERIALIZE_MODE: ${RAW_MATERIALIZE_MODE:-auto}
-      WATCHFILES_FORCE_POLLING: "true"
-      TZ: Asia/Shanghai
+      WATCHFILES_FORCE_POLLING: 'true'
+      BRIDGE_ENABLED: ${BRIDGE_ENABLED:-false}
     ports:
-      - "${LAN_BIND_IP:-127.0.0.1}:${BRIDGE_PORT:-8080}:8080"
+    - ${LAN_BIND_IP:-127.0.0.1}:${PICPEAK_PORT:-3000}:3000
+    - ${LAN_BIND_IP:-127.0.0.1}:${BRIDGE_PORT:-8080}:8080
     volumes:
-      - bridge-data:/data
-      - ./projects.json:/config/projects.json:ro
-      - type: bind
-        source: ${PHOTO_PROJECT}/01_RAW
-        target: /raw/${PROJECT_FOLDER:-示例项目}
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ${PHOTO_PROJECT}/03_SELECTED_RAW
-        target: /selected/${PROJECT_FOLDER:-示例项目}
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ${PHOTO_PROJECT}/04_FINAL
-        target: /final/${PROJECT_FOLDER:-示例项目}
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ${PHOTO_PROJECT}/05_HISTORY
-        target: /history/${PROJECT_FOLDER:-示例项目}
-        bind:
-          create_host_path: false
-    networks: [photos]
-    depends_on:
-      picpeak:
-        condition: service_healthy
+    - picpeak-data:/data
+    - type: bind
+      source: ${PHOTO_PROJECT:?填写摄影项目绝对路径}/02_PROOF
+      target: /external-media/${PROJECT_FOLDER:-示例项目}
+      read_only: true
+      bind:
+        create_host_path: false
+    - bridge-data:/bridge-data
+    - ./projects.json:/config/projects.json:ro
+    - type: bind
+      source: ${PHOTO_PROJECT}/01_RAW
+      target: /raw/${PROJECT_FOLDER:-示例项目}
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ${PHOTO_PROJECT}/03_SELECTED_RAW
+      target: /selected/${PROJECT_FOLDER:-示例项目}
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ${PHOTO_PROJECT}/04_FINAL
+      target: /final/${PROJECT_FOLDER:-示例项目}
+      read_only: true
+      bind:
+        create_host_path: false
+    - type: bind
+      source: ${PHOTO_PROJECT}/05_HISTORY
+      target: /history/${PROJECT_FOLDER:-示例项目}
+      bind:
+        create_host_path: false
+    networks:
+    - photos
     restart: unless-stopped
-    read_only: true
-    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
+    security_opt:
+    - no-new-privileges:true
+    stop_grace_period: 60s
 networks:
   photos:
     driver: bridge
 volumes:
-  picpeak-data:
-  bridge-data:
+  picpeak-data: null
+  bridge-data: null

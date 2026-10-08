@@ -1,46 +1,34 @@
-# PixCake Bridge · 飞牛 NAS 中文选片与精修交付
+# PicPeak 简体中文 + PixCake Bridge 一体化版
 
-独立 Python 3.12 / FastAPI 服务，通过 PicPeak Public API Token 轮询客户选片，
-生成待精修 RAW，并将像素蛋糕导出的成片替换回原画廊。像素蛋糕无需 API。
-PicPeak 中文 Fork 保留官方 stable 历史，Bridge 的摄影业务自动化不进入 PicPeak。
+为飞牛 fnOS NAS 提供中文客户选片、NAS 照片目录关联、待精修 RAW 整理和精修成片交付。默认使用 **一个 Docker 镜像、一个容器**；PicPeak 和 Bridge 保留独立代码、进程和数据库，便于跟随官方更新。
 
-当前版本：Bridge `0.1.0`，PicPeak `3.134.1-zh.4`。
-这是可构建、可运行的第一版；实际 fnOS、FN Connect 和像素蛋糕验收仍需设备。
-测试证据见 [测试计划](docs/testing.md) 和 [验证报告](docs/verification.md)。
+当前固定镜像：`picpeak-pixcake:3.134.1-zh.6-bridge.0.1.1`。
+包含 PicPeak 3.134.1 中文版及本轮中文审校，Bridge 0.1.1。不要使用 `latest`。
 
 ## 工作流程
 
-```text
-01_RAW（原始照片，只读） + 02_PROOF（JPG，只读）
- → PicPeak 客户中文选片，绿色=精修
- → Bridge 生成 03_SELECTED_RAW
- → 像素蛋糕读取 RAW，导出同 stem 的 JPG 到 04_FINAL
- → Bridge 等待文件稳定、SHA256 去重、记录版本到 05_HISTORY
- → replaces_photo_id 替换原 Proof，原 photo_id/反馈/分享链接保留
-```
+相机 RAW/JPG → NAS → 客户中文选片（选为精修）→ `03_SELECTED_RAW` → 像素蛋糕 → `04_FINAL` → 自动替换客户页面上的原照片。
 
-RAW 支持 ARW、CR3、CR2、NEF、RAF、DNG、ORF、RW2，扩展名不区分大小写。
-FINAL 第一版支持 JPG/JPEG/PNG，单文件默认上限 100 MiB。
-RAW/FINAL 必须按 `source_filename` 的 stem 唯一匹配：
-`DSC00125.JPG` → `DSC00125.ARW` → `DSC00125.JPG`。
-多相机重名、多扩展名同 stem、重复 Proof 均作为冲突停止该照片，不随意选一个。
+Bridge 按 `source_filename` 匹配原片，等待成片稳定后计算 SHA-256；同名返修再次同步，保留原 photo_id、评论、评分、选片和分享链接。默认保留最近 3 个成片版本。SELECTING 阶段取消可清理待精修副本，EDITING 后取消仅标记，支持后续追加。原片始终只读。RAW 支持 ARW/CR3/CR2/NEF/RAF/DNG/ORF/RW2；第一版成片支持 JPG/JPEG/PNG，默认单文件 100 MiB，要求文件 stem 唯一一致。
 
-## 推荐部署：PicPeak AIO
+## 一体化结构
 
-单摄影师/NAS 优先使用官方 AIO 结构：一个 Node 服务、SQLite、内置前端，
-无需另外部署 nginx/PostgreSQL/Redis。PicPeak 数据在 `/data`，Bridge 使用自己的
-SQLite；两者在同一 Docker 网络中通过 `http://picpeak:3000` 通信。
-需要迁移 PostgreSQL 时，PicPeak 可配置 `DATABASE_CLIENT=pg` 及 DB_*；Bridge
-使用 SQLAlchemy，提供 `postgres` 可选依赖，迁移说明见下文。
+- PicPeak 页面：容器端口 3000，内置前端和后端，默认 SQLite。
+- Bridge 中文管理：容器端口 8080，仅绑定 NAS 内网 IP。
+- 容器内通过 `127.0.0.1` 通信，使用 Public API Token，无需管理员密码。
+- `/data` 保存 PicPeak 数据、媒体、JWT 密钥和备份；`/bridge-data` 保存 Bridge SQLite。
+- Supervisor 分别监控两个进程；进程异常自动重启，Docker 健康检查覆盖已启用的两个服务。
+- 开启同步后，一个服务故障会让整个容器显示 unhealthy。Docker 的 restart 策略不会因 unhealthy 自动重启；应查日志处理，不能把健康检查当作自动修复。
+- 两个服务升级、容器重启时会同时短暂中断。
 
-## 飞牛 fnOS 部署
+## 飞牛部署
 
-### 1. 准备项目目录与权限
+### 1. 准备目录
 
-在飞牛文件管理器建立：
+每个摄影项目使用：
 
 ```text
-摄影项目/示例项目/
+摄影项目/项目名/
   01_RAW/
   02_PROOF/
   03_SELECTED_RAW/
@@ -48,209 +36,78 @@ SQLite；两者在同一 Docker 网络中通过 `http://picpeak:3000` 通信。
   05_HISTORY/
 ```
 
-上传相机 RAW 到 `01_RAW`，用于客户选片的 JPG 到 `02_PROOF`。
-请从 fnOS 查看真实绝对路径，例如 `/vol1/1000/摄影项目/示例项目`；示例路径
-不能照抄假定是您的设备路径。
+确认真实 NAS 绝对路径，给 UID/GID 1001 读取 RAW、PROOF、FINAL 和写入 SELECTED、HISTORY 的权限。镜像只调整数据卷权限，不会自动修改摄影目录权限。通过 Docker 的只读挂载保护原片；不要可写挂载整个 Camera 或摄影项目根目录。
 
-Bridge 默认 UID/GID 1001。通过 fnOS 权限界面或管理员终端，让该身份能读取
-RAW/FINAL、写入 SELECTED/HISTORY；摄影师的 SMB 账号能读取 SELECTED、写入 FINAL。
-不要将整个摄影项目可写挂载给 Bridge。`compose.yaml` 已把 RAW、PROOF 和 FINAL
-分别只读挂载。若 fnOS 用户组不同，可给 Bridge 添加该共享目录的补充组：
+### 2. 构建或导入镜像
 
-```yaml
-# compose.override.yaml，仅在确有需要时配置真实 NAS 用户组 ID
-services:
-  bridge:
-    group_add: ["1000"]
+源码放在同一父目录，分别为 `picpeak-zh` 和 `pixcake-bridge`。获取中文 Fork `feat/zh-cn`，然后在 Bridge 仓库运行：
+
+```sh
+./docker/integrated/build.sh
 ```
 
-RAW 原始文件可保持摄影师现有权限。默认 auto 模式只有原始 inode 没有写权限
-时才尝试 hardlink；否则自动改用 reflink/copy，避免后期软件通过硬链接写坏原片。
-Bridge 不会 chmod 原片。同盘的两个独立 bind mount 也可能产生 EXDEV，因此即使
-同文件系统也可能回退。若无法保证后期软件只读 RAW，请设置 `RAW_MATERIALIZE_MODE=copy`。
-待精修副本生成后为只读。root 或管理员仍能修改硬链接 inode；需要强隔离时必须 copy。
+默认构建 linux/amd64（常见 x86 飞牛 NAS）；ARM NAS 构建时设置 `PLATFORM=linux/arm64`，应另行验收。构建先使用 PicPeak 自己的 Dockerfile，再组合 Bridge。独立执行 Compose build 前必须先构建固定版本 PicPeak 基础镜像。
 
-### 2. 放置两个独立仓库
+离线导入：
 
-```text
-部署目录/
-  picpeak-zh/
-  pixcake-bridge/
+```sh
+docker save -o picpeak-pixcake-amd64.tar picpeak-pixcake:3.134.1-zh.6-bridge.0.1.1
 ```
 
-```bash
-git clone --branch zh-stable https://github.com/Aanlik/picpeak-zh.git
-git clone https://github.com/Aanlik/pixcake-bridge.git
-cd pixcake-bridge
-cp .env.example .env
+在飞牛 Docker 镜像管理中导入 tar，再创建 Compose 项目。
+
+### 3. 首次初始化
+
+复制 `.env.example` 为 `.env`，设置 `LAN_BIND_IP` 为 NAS 内网 IP、`PHOTO_PROJECT` 为项目绝对路径、`PROJECT_FOLDER` 为目录名称、`BRIDGE_ADMIN_PASSWORD` 为至少 12 位随机密码。初次保留 `BRIDGE_ENABLED=false`、`PICPEAK_TOKEN` 为空。
+
+```sh
 cp projects.example.json projects.json
+docker compose up -d
 ```
 
-Bridge 仓库默认私有，克隆需要您的 GitHub 身份；也可直接使用本次生成的本地目录。
-在飞牛 Docker 应用中创建 Compose 项目，选择 `pixcake-bridge/compose.yaml`。
-项目配置要包含 `.env` 和 `projects.json`。
+访问 `http://NAS内网IP:3000`，按 PicPeak 初始化向导创建用户名管理员。初次部署的设置令牌保存在持久化 PicPeak 数据中，也可查看 PicPeak 启动日志。此时 Bridge 尚未监听端口，容器健康检查只检查 PicPeak。
 
-### 3. 编辑环境变量并构建
+完成后，在 PicPeak 设置中创建具有 read/write 权限的 Public API Token；填入 `.env` 的 `PICPEAK_TOKEN`，设置 `BRIDGE_ENABLED=true`。创建选片项目并确认其数字 event_id；修改 `projects.json` 中的名称、event_id 和四个容器路径。
 
-填写 `.env`：
-
-* `PHOTO_PROJECT`：完整摄影项目路径；`PROJECT_FOLDER`：项目目录名称。
-* `LAN_BIND_IP`：NAS 的局域网 IP，例如 `192.168.1.50`；默认 127.0.0.1 仅本机。
-* `BRIDGE_ADMIN_PASSWORD`：随机、至少 12 位的管理密码。
-* `PICPEAK_IMAGE`/`BRIDGE_IMAGE`：保持明确版本；正式发布可换成镜像 digest。
-* `PICPEAK_TOKEN` 暂保留占位值，完成下一步后替换。
-
-```bash
-docker compose build
-docker compose up -d picpeak
+```sh
+docker compose up -d --force-recreate
 ```
 
-Compose 不会静默创建不存在的 NAS 目录；缺目录会直接报错。默认部署支持一个项目。
-多个项目需在 `projects.json` 逐个添加 event_id/路径，同时增加每个项目的四个独立
-Bridge 挂载和 PicPeak PROOF 挂载；禁止用一个可写 NAS 总目录替代。
+访问 `http://NAS内网IP:8080` 查看 Bridge 管理后台，用已配置的 Bridge 管理密码登录。手动同步并确认连接状态。每次修改项目配置或环境变量后重建容器。
 
-### 4. 初始化 PicPeak、设置中文、创建 Public API Token
+### 4. 关联 NAS 照片
 
-打开 `http://NAS局域网IP:3000/admin`，读取初始化令牌：
+新建或管理项目时选择“关联 NAS 文件夹”，用 External Media Reference Mode 引用 `/external-media/项目名`。PROOF 挂载只读。引用既有 Home/Camera 时设置 `NAS_CAMERA_ROOT` 并使用：
 
-```bash
-docker compose exec picpeak cat /data/db/SETUP_TOKEN
+```sh
+docker compose -f compose.yaml -f compose.nas-camera.yaml up -d
 ```
 
-按中文向导创建管理员账号。进入“设置 → 常规 → 默认语言”选择“简体中文”。
-**必须保存此设置**：画廊登录页采用官方 `general_default_language` 设置，单独
-设置 Docker 的 `PICPEAK_DEFAULT_LANGUAGE` 不能替代后台默认语言。
-前端构建参数决定初始化默认；访客之后可切换语言，摄影师后台也可选择中文。
+在页面选择具体拍摄文件夹，避免把全部 Camera 导入同一项目。RAW 与待精修、成片目录仍按项目配置独立挂载；Camera 入口不会自动替代 RAW 映射。
 
-在后台集成/API 令牌页创建专用令牌，scope 仅 `read` + `write`。
-账号角色需要 `events.view`、`photos.view`、`photos.upload` 及目标项目访问权。
-不授予 Bridge `admin` scope，不填写管理员账号密码。保存一次性显示的 `pp_live_…`
-到 `.env` 的 `PICPEAK_TOKEN`；不要把 `.env` 提交到 Git。
+### 5. 像素蛋糕与客户分享
 
-### 5. 建立外部引用画廊
+像素蛋糕读取 `03_SELECTED_RAW`，导出到 `04_FINAL`，保留原文件 stem。目录追加 RAW 后若软件不能自动识别，刷新或重新导入目录。
 
-在 PicPeak 创建摄影项目，选择 External Media Reference Mode，导入
-`/external-media/示例项目`（对应 NAS 的 `02_PROOF`）。缩略图写入 PicPeak `/data`，
-原 Proof 只读。官方外部目录监视器与周期扫描可发现后续新增 Proof。
+客户入口仅转发 PicPeak；Bridge 不对公网开放。FN Connect 可用于摄影师远程管理，但不能作为已验证的匿名客户分享入口。临时可使用独立 HTTPS 穿透入口，之后迁移公网 IP + DDNS；从现在使用固定自有域名，设置 PicPeak 站点地址，尽量保留已有分享链接。原片上传、Bridge 同步均不依赖公网。
 
-开启反馈和颜色标记，建议按客户身份保存；中文绿色显示为“选为精修/已选精修”。
-多人选片时，Bridge 默认采用官方 `mark_source=client` 合并后的颜色，**不是**
-任意一位客户点绿就一定选中；业务应使用单一客户或共享颜色模式取得统一结果。
-共享模式中任何客户都能改颜色，需先与客户约定。
+## 从双容器迁移
 
-从画廊管理页/API 得到数字 event_id，填入 `projects.json`。
-其中四个容器路径必须与 Compose 挂载一致。编辑配置后重启 Bridge。
+先停止原 PicPeak 和 Bridge，再备份两个完整数据卷、`.env`、projects.json 和 Compose。新容器沿用原 PicPeak 卷挂载 `/data`，原 Bridge 卷挂载 `/bridge-data`；照片目录的容器路径必须保持一致，已有项目路径不能随意改名。必要时在 Compose 中用 `external: true` 和真实 `name` 引用原卷，避免 Compose 项目名称改变后创建空卷。
 
-```bash
-# 本机有 Python/uv 时运行；不输出令牌内容
-python3 scripts/preflight.py
-docker compose up -d bridge
-docker compose ps
-```
+第一次迁移应在卷副本上验证，确认 photo_id、评论、分享链接、Bridge 同步记录和 RAW 校验后，再替换正式容器。不要同时运行新旧同步服务，不要覆盖真实 Token。备份完整 `/data`，仅备份数据库会遗漏 JWT 密钥与媒体。
 
-Bridge 管理入口 `http://NAS局域网IP:8080`，账号 `admin`，密码为配置值。
-后台显示客户已选、RAW 匹配、待精修、已精修、已同步、返修、取消待确认与异常。
-提供手动同步、重新扫描、重试、推进项目阶段。
-**禁止通过 FN Connect、反向代理或公网转发 Bridge 端口**；客户只访问 PicPeak。
-生产建议为管理访问配置局域网 HTTPS。
+## 后续统一更新与发布
 
-### 6. 像素蛋糕
+1. 在中文 Fork 同步 upstream stable，解决 locale/中文 UX 的窄范围冲突，执行翻译、前端、Docker 检查。
+2. 在 Bridge 更新依赖和测试，记录两个仓库的确定提交与版本。
+3. 更新 `build.sh`、Dockerfile、`.env.example`、Compose 和 README 的固定镜像版本。
+4. 构建一体化镜像，验证两个进程、初次禁用 Bridge、启用后健康检查、重启恢复以及选片→成片→返修流程。
+5. 发布唯一版本标签，部署前备份完整数据卷；更新只替换镜像，保留卷和照片挂载。
+6. 回退涉及数据库迁移时，恢复升级前卷备份；不能只切换旧镜像并假定数据库兼容。
 
-像素蛋糕通过本机/SMB 读取 `03_SELECTED_RAW`，输出固定为 `04_FINAL`。
-保持相机 stem，例如 `DSC00125.ARW → DSC00125.JPG`，禁用随机命名/自动序号后缀。
-Bridge 使用文件事件加周期扫描，连续至少 STABLE_SECONDS 秒未变才创建上传快照。
-再次导出同名文件且 SHA256 变化时自动作为返修上传。
+GitHub Actions `Integrated image` 检查锁定中文 Fork 提交并构建一体化版，执行双服务与重启检查。手动执行时可选择发布到 GHCR；发布账户权限、仓库包访问权限仍需正确配置。旧双容器示例保留为 `compose.dual.yaml`，说明见 [双容器部署](docs/deployment-dual.md)。
 
-像素蛋糕已打开的项目能否自动发现新增 RAW，当前无实机证据。若不能自动发现，
-使用“刷新/重新导入目录”操作。Bridge 不调用像素蛋糕 API，不依赖此自动发现能力。
+## 测试与限制
 
-## 阶段与取消行为
-
-| 阶段 | 客户新增 | 客户取消 | FINAL |
-|---|---|---|---|
-| SELECTING | 自动生成 RAW | 删除经哈希核对的 Bridge 副本 | 稳定后可同步 |
-| EDITING | 继续追加 RAW | 标记取消，保留正在精修的 RAW | 自动同步 |
-| DELIVERED | 继续追加 RAW | 保留 RAW，摄影师处理 | 允许返修 |
-| ARCHIVED | 停止轮询 | 不处理 | 停止上传 |
-
-阶段只能前进，不允许从 EDITING 退回 SELECTING，以免意外删除在修文件。
-取消后已经上传的成片不会自动撤回。归档为 Bridge 同步状态，与 PicPeak 的画廊
-归档分别控制；完成项目后应在两端按需要归档。
-
-## 持久化、版本和故障恢复
-
-SQLite 保存 projects/photos/deliveries/sync_runs/errors，启用 WAL/外键/忙等待。
-Bridge 单进程运行，定时和手动任务共用锁，不能启动多个副本或多个 uvicorn worker。
-哈希相同的当前 FINAL 跳过；返修新哈希替换同一个 photo_id。
-`05_HISTORY/<photo_id>/` 保留最近 3 个成功版本，任务摘要留在数据库。
-上传中的/失败的版本不会为了满足 3 个版本而被删除，以便诊断与重试。
-
-为恢复“服务器成功但响应丢失”，上传文件名保留相机 stem 并附加 `.__bridge_<sha256>`
-标记。官方 API 能读取该 original_filename，重启后据此确认结果；source_filename
-仍保持相机原名。客户端显示/下载名可能包含标记，这是第一版已知限制。
-没有上游幂等键时无法从理论上保证所有网络故障下的 exactly-once：仍无法确认的
-任务进入 UNKNOWN，自动暂停；摄影师先核对 PicPeak，再从后台重试。
-401/403/404 和确定失败记录异常；429 延后下一周期重试；5xx/中断的上传结果进入核对。
-GET 请求短暂失败最多重试 3 次，API 故障不会当作“全员取消”。
-
-同一 Proof 重复导入不会把精修重新覆盖为原片：官方 external_relpath 去重保留
-已替换记录，替换后媒体转为 managed。最终上传文件也储存在 NAS 的 PicPeak `/data`；
-需要为 FINAL、3 个历史版本与 PicPeak 成片副本预留存储。
-
-## FN Connect：先验收匿名分享，再开放客户入口
-
-目前尚未提供 NAS 实例，无法完成现场 Spike。请按 [FN Connect 验收单](docs/fn-connect-spike.md)
-在未登录飞牛账号的外部手机上测试真实 PicPeak 分享链接；飞牛“文件外链分享”
-可用不能证明任意 Docker 网页应用都可匿名访问。验收未通过前不要向客户承诺远程可用。
-内部网络、目录、Bridge 地址不受公网入口选择影响。
-
-若不支持匿名应用转发，备选为自有域名 + VPS HTTPS 反向代理 + FRP/SSH 反向隧道，
-仅转发 PicPeak；需要自行评估服务器费用、照片带宽与维护。摄影师异地 RAW 可用
-Tailscale + SMB，客户无需接触 RAW 或 Bridge。
-
-## 本地开发与测试
-
-```bash
-uv sync --python 3.12 --extra test
-uv run pytest -q
-uv run uvicorn pixcake_bridge.app:app --host 127.0.0.1 --port 8080
-```
-
-本地启动需配置环境中的 PROJECTS_FILE、PICPEAK_URL、PICPEAK_TOKEN、DATABASE_URL、
-BRIDGE_ADMIN_PASSWORD。production Compose 的路径是容器路径，不能直接用于本机启动。
-
-真实集成测试需要专用 PicPeak 测试容器、全新的数据卷/本地 fixture 目录，参考
-[测试文档](docs/testing.md)。`scripts/integration.py` 从真实客户反馈接口选片，
-用 read/write token 调用替换接口，校验 ID、评论、评分、选择、名称排序、分享链接、
-最终文件哈希、RAW 不变与重启后无重复上传。不要对生产实例运行该脚本。
-
-## 备份、升级与 PostgreSQL 迁移路径
-
-停止 Bridge 后备份其命名数据卷中的整个 `/data`，不要只复制 bridge.db 而遗漏 WAL。
-PicPeak 使用内置一致性备份或停机备份 `/data`；摄影项目单独备份。
-更新镜像前记录 digest，执行上游维护流程：
-[中文 Fork 维护文档](../picpeak-zh/docs/zh-CN-maintenance.md)。
-更新后验收健康状态、一轮选片同步和一张返修，再恢复日常使用。
-
-Bridge 初始模型与数据库连接不绑定 SQLite，迁移 PostgreSQL 时安装
-`uv sync --extra postgres`，设置 `DATABASE_URL=postgresql+psycopg://…`。
-先停机、建立同结构数据库、按 projects → photos → deliveries/sync_runs/errors 顺序
-导入并保留主键，修正 PostgreSQL sequence，验证外键/行数/哈希后切换。
-生产 Dockerfile 默认未安装 PostgreSQL extra；需要构建带该依赖的新版本。
-此迁移路径已预留，**没有宣称跨数据库迁移已实际测试**。未来字段变更应引入显式
-版本化迁移；当前 create_all 不会自动升级已有字段。
-
-## 已知限制
-
-详见 [风险与限制](docs/risks.md)。尤其注意：真实手机/微信、FN Connect、像素蛋糕
-与 NAS 断电尚需现场验收；专业长尾文案属于机器辅助初译；原始 hardlink inode 需要
-额外权限保证；上游替换会更新拍摄 EXIF，按拍摄时间排序时需像素蛋糕保留原 EXIF。
-本项目不会伪造这些现场验证结果。
-
-### 本地账号与链接分享
-
-当前中文 AIO 使用用户名登录，客户选片不填邮箱，发布后复制链接自行交付给客户；SMTP 与邮件入口关闭。本地管理员在后台创建，初始密码私下交付。邮件依赖的门户与合同交付模块不启用，未提供短信/微信自动发送。详情见同级 PicPeak `docs/zh-CN-no-email.md`。
-
-### 直接关联已有 Home/Camera
-
-PicPeak 3.134.1-zh.5 增加新建项目与照片页的 NAS 文件夹关联入口。若同时使用现有 Camera，填写 `NAS_CAMERA_ROOT`，然后使用 `docker compose -f compose.yaml -f compose.nas-camera.yaml up -d`；Camera 只读挂载，原 Proof 路径保留。选择对应拍摄文件夹后导入客户照片，可开启自动追加。仅关联相册不会自动配置 Bridge，仍需在项目配置里填写对应 RAW、FINAL 等目录。
+见 [测试计划](docs/testing.md)、[原工作流验证](docs/verification.md)、[一体化验证](docs/integrated-verification.md)。真实设备浏览器、FN Connect、像素蛋糕自动发现及 ARM 支持分别验收，不能用容器启动测试代替。PicPeak 可连接外部 PostgreSQL；Bridge 通过 SQLAlchemy 保留迁移路径，需额外安装 postgres 可选依赖并执行数据迁移，不是改连接字符串即可完成。

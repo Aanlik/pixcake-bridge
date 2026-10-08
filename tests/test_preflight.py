@@ -37,3 +37,23 @@ def test_raw_write_rejected():
     cfg["services"]["bridge"]["volumes"][0]["read_only"] = False
     with pytest.raises(ValueError):
         preflight.validate(cfg)
+
+
+def integrated():
+    cfg = compose()
+    picpeak = cfg['services']['picpeak']
+    picpeak['ports'] = [{'host_ip': '192.168.1.12', 'target': 3000}, {'host_ip': '192.168.1.12', 'target': 8080}]
+    picpeak['volumes'] += cfg['services']['bridge']['volumes']
+    del cfg['services']['bridge']
+    return cfg
+
+
+def test_integrated_safe_deployment():
+    assert preflight.validate(integrated())
+
+
+def test_integrated_bridge_public_bind_rejected():
+    cfg = integrated()
+    cfg['services']['picpeak']['ports'][1]['host_ip'] = '0.0.0.0'
+    with pytest.raises(ValueError):
+        preflight.validate(cfg)
