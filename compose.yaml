@@ -1,12 +1,12 @@
 name: pixcake
 services:
   picpeak:
-    image: ${STACK_IMAGE:-picpeak-pixcake:3.134.1-zh.6-bridge.0.1.1}
+    image: ${STACK_IMAGE:-picpeak-pixcake:3.134.1-zh.7-bridge.0.1.1}
     build:
       context: .
       dockerfile: Dockerfile.integrated
       args:
-        PICPEAK_BASE: ${PICPEAK_BASE:-picpeak-zh:3.134.1-zh.6}
+        PICPEAK_BASE: ${PICPEAK_BASE:-picpeak-zh:3.134.1-zh.7}
     environment:
       PORT: '3000'
       NO_EMAIL_MODE: 'true'
