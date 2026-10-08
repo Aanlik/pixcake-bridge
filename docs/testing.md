@@ -8,6 +8,8 @@
 uv run python scripts/integration.py --container pixcake-ci-picpeak --root /tmp/pixcake-fixture --count 100 --report integration-report.json
 ```
 
+脚本直接读取 PicPeak SQLite 时设置 10 秒锁等待，以容忍缩略图后台任务的短暂写锁；超时或其他 SQL 错误仍会使测试失败，数据完整性断言保持不变。
+
 1000 张测试需要另一个全新实例和目录，传 `--count 1000`。脚本用一次性管理员仅设置测试环境，再生成 read/write Token；Bridge 本身始终使用 Token。流程：50 选中、追加 5、取消 2、进入 EDITING 后取消、导出 53 张成片并返修一次、检查 54 次交付、停止 PicPeak、恢复、重建 Bridge 引擎、校验无重复与所有 RAW SHA-256 不变。断网以客户端连接失败测试；真实 NAS 断电尚未执行。
 
 中文检查：在中文 Fork 运行 `node scripts/check-zh-cn.mjs` 与 `node --test scripts/check-zh-cn.test.mjs`；前端类型检查、完整 Vitest 和 AIO 构建见维护文档。API 中文客户姓名有独立真实验证器测试。
