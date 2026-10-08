@@ -135,9 +135,19 @@ async def main(args):
         Image.new("RGB", (128, 96), (210, 30, 70)).save(final / "DSC00004.JPG")
         await engine.sync()
         await engine.sync()
-        after = next(p for p in await api.photos(eid) if p["id"] == photo_id(4))
+        # The official API omits photos while replacement thumbnails are
+        # processing. Wait for the complete fixture, then assert identity;
+        # do not treat a transient filtered list as a deleted photograph.
+        expected_ids = set(name_order_before)
+        for _ in range(60):
+            ready_photos = await api.photos(eid)
+            if {p["id"] for p in ready_photos} == expected_ids:
+                break
+            await asyncio.sleep(0.5)
+        assert {p["id"] for p in ready_photos} == expected_ids, "Replacement photos did not finish processing within 30 seconds"
+        after = next(p for p in ready_photos if p["id"] == photo_id(4))
         assert fixture_db_photo() == original_fields
-        name_order_after = [p["id"] for p in sorted(await api.photos(eid), key=lambda p: (p["original_filename"] or p["filename"]).casefold())]
+        name_order_after = [p["id"] for p in sorted(ready_photos, key=lambda p: (p["original_filename"] or p["filename"]).casefold())]
         assert name_order_after == name_order_before
         for key in ("id", "source_filename", "color_label", "comment_count", "favorite_count", "average_rating"):
             assert after[key] == prior[key], (key, prior[key], after[key])
