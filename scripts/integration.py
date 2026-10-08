@@ -29,6 +29,15 @@ def docker(*args):
     return subprocess.check_output(["docker", *args], text=True).strip()
 
 
+def fixture_db_query(container, stmt):
+    # PicPeak thumbnail workers can briefly hold the database lock after
+    # replacement. Wait at most 10 seconds, then let SQLite errors fail E2E.
+    return json.loads(docker(
+        "exec", container, "sqlite3", "-cmd", ".timeout 10000",
+        "-json", "/data/db/picpeak.db", stmt,
+    ))
+
+
 async def wait_ready(url):
     async with httpx.AsyncClient(timeout=5) as c:
         for _ in range(60):
@@ -122,7 +131,7 @@ async def main(args):
         db_fields = ["id", "source_filename", "category_id", "uploaded_at", "captured_at", "type", "visibility"]
         def fixture_db_photo():
             stmt = "SELECT " + ",".join(db_fields) + " FROM photos WHERE id=" + str(photo_id(4))
-            return json.loads(docker("exec", args.container, "sqlite3", "-json", "/data/db/picpeak.db", stmt))[0]
+            return fixture_db_query(args.container, stmt)[0]
         original_fields = fixture_db_photo()
         name_order_before = [p["id"] for p in sorted(await api.photos(eid), key=lambda p: (p["original_filename"] or p["filename"]).casefold())]
         prior = next(p for p in await api.photos(eid) if p["id"] == photo_id(4))
@@ -172,7 +181,7 @@ async def main(args):
         share_path = "/" + info["share_url"].split("/", 3)[-1] if info["share_url"].startswith("http") else info["share_url"]
         assert (await guest.get(share_path)).status_code == 200
         # Verify actual downloaded final bytes, not only the filename marker.
-        managed = json.loads(docker("exec", args.container, "sqlite3", "-json", "/data/db/picpeak.db", "SELECT path FROM photos WHERE id=" + str(photo_id(4))))[0]["path"]
+        managed = fixture_db_query(args.container, "SELECT path FROM photos WHERE id=" + str(photo_id(4)))[0]["path"]
         remote_hash = docker("exec", args.container, "sha256sum", "/data/storage/events/active/" + managed).split()[0]
         assert remote_hash == sha256(final / "DSC00004.JPG")
         assert {p.name: sha256(p) for p in raw.iterdir()} == before
