@@ -21,3 +21,7 @@ NAS 私有 Home 目录属于 UID 1000，实际部署使用对应运行 UID；仅
 ## 摄影进度摘要升级（0.1.1）
 新增持久化的精修/交付阶段追加选择标记；旧 SQLite 原地添加列，保留照片和交付记录。新增 2 个测试覆盖追加→取消→重启及旧表升级。PicPeak 中文项目页读取内部只读摘要，凭据由服务端保管；未关联项目明确提示。
 返修仅统计成功同步的不同内容版本，失败任务不虚增返修。
+
+## NAS 文件夹关联（zh.5）
+
+新增前端测试通过（共 888 项）。真实容器结果见 `outputs/verification/nas-folder-container.json`；NAS 实测见 `nas-folder-results.json`。专用容器脚本 `scripts/nas_folder_e2e.py` 从整套工作区根目录执行，依赖 httpx/Pillow 和本地 Docker 镜像 `picpeak-zh:3.134.1-zh.5`，使用 `pixcake-folder-picpeak`、`pixcake-folder-test-data` 和端口 19309；必须使用未初始化的专用测试卷，不能指向生产实例。脚本留存测试容器和合成图片，便于人工核对。
