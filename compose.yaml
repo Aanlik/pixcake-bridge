@@ -7,6 +7,13 @@ services:
       dockerfile: Dockerfile.integrated
       args:
         PICPEAK_BASE: ${PICPEAK_BASE:-picpeak-zh:3.134.1-zh.7}
+    # Copy only configuration into the service volume to support NAS owner-only bind permissions.
+    entrypoint:
+    - dumb-init
+    - --
+    - /bin/sh
+    - -ec
+    - cp /config/projects.json /bridge-data/projects.json; chown 1001:1001 /bridge-data/projects.json; chmod 640 /bridge-data/projects.json; exec /opt/integrated/start.sh
     environment:
       PORT: '3000'
       NO_EMAIL_MODE: 'true'
@@ -21,7 +28,7 @@ services:
       PICPEAK_TOKEN: ${PICPEAK_TOKEN:-}
       BRIDGE_ADMIN_PASSWORD: ${BRIDGE_ADMIN_PASSWORD:?填写管理密码}
       DATABASE_URL: sqlite:////bridge-data/bridge.db
-      PROJECTS_FILE: /config/projects.json
+      PROJECTS_FILE: /bridge-data/projects.json
       POLL_SECONDS: ${POLL_SECONDS:-30}
       STABLE_SECONDS: ${STABLE_SECONDS:-10}
       MAX_FINAL_BYTES: ${MAX_FINAL_BYTES:-104857600}

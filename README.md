@@ -145,3 +145,5 @@ GitHub Actions `Integrated image` 检查锁定中文 Fork 提交并构建一体�
 ## 测试与限制
 
 见 [测试计划](docs/testing.md)、[原工作流验证](docs/verification.md)、[一体化验证](docs/integrated-verification.md)。群晖、威联通等平台实机、真实设备浏览器、外网分享、各修图软件目录发现及 ARM 支持分别验收，不能用容器启动测试代替。PicPeak 可连接外部 PostgreSQL；Bridge 通过 SQLAlchemy 保留迁移路径，需额外安装 postgres 可选依赖并执行数据迁移，不是改连接字符串即可完成。
+
+NAS 配置文件权限：集成 Compose 在启动时将只读 `projects.json` 复制到 Bridge 数据卷，并设置为服务账号可读，不修改宿主配置文件或照片权限。修改项目配置后需重建容器。Camera 只读挂载用于相册引用；自动选片与精修交付还需为具体项目配置 RAW、SELECTED、FINAL、HISTORY 目录。
