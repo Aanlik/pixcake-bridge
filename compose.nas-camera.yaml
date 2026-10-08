@@ -1,0 +1,10 @@
+# docker compose -f compose.yaml -f compose.nas-camera.yaml up -d
+services:
+  picpeak:
+    volumes:
+      - type: bind
+        source: ${NAS_CAMERA_ROOT:?填写现有 NAS Camera 绝对路径}
+        target: /external-media/Camera
+        read_only: true
+        bind:
+          create_host_path: false

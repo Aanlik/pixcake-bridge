@@ -1,7 +1,7 @@
 name: pixcake
 services:
   picpeak:
-    image: ${PICPEAK_IMAGE:-picpeak-zh:3.134.1-zh.4}
+    image: ${PICPEAK_IMAGE:-picpeak-zh:3.134.1-zh.5}
     build:
       context: ../picpeak-zh
       dockerfile: Dockerfile.aio

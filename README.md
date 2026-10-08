@@ -250,3 +250,7 @@ Bridge 初始模型与数据库连接不绑定 SQLite，迁移 PostgreSQL 时安
 ### 本地账号与链接分享
 
 当前中文 AIO 使用用户名登录，客户选片不填邮箱，发布后复制链接自行交付给客户；SMTP 与邮件入口关闭。本地管理员在后台创建，初始密码私下交付。邮件依赖的门户与合同交付模块不启用，未提供短信/微信自动发送。详情见同级 PicPeak `docs/zh-CN-no-email.md`。
+
+### 直接关联已有 Home/Camera
+
+PicPeak 3.134.1-zh.5 增加新建项目与照片页的 NAS 文件夹关联入口。若同时使用现有 Camera，填写 `NAS_CAMERA_ROOT`，然后使用 `docker compose -f compose.yaml -f compose.nas-camera.yaml up -d`；Camera 只读挂载，原 Proof 路径保留。选择对应拍摄文件夹后导入客户照片，可开启自动追加。仅关联相册不会自动配置 Bridge，仍需在项目配置里填写对应 RAW、FINAL 等目录。
