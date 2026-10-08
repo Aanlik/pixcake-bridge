@@ -147,3 +147,5 @@ GitHub Actions `Integrated image` 检查锁定中文 Fork 提交并构建一体�
 见 [测试计划](docs/testing.md)、[原工作流验证](docs/verification.md)、[一体化验证](docs/integrated-verification.md)。群晖、威联通等平台实机、真实设备浏览器、外网分享、各修图软件目录发现及 ARM 支持分别验收，不能用容器启动测试代替。PicPeak 可连接外部 PostgreSQL；Bridge 通过 SQLAlchemy 保留迁移路径，需额外安装 postgres 可选依赖并执行数据迁移，不是改连接字符串即可完成。
 
 NAS 配置文件权限：集成 Compose 在启动时将只读 `projects.json` 复制到 Bridge 数据卷，并设置为服务账号可读，不修改宿主配置文件或照片权限。修改项目配置后需重建容器。Camera 只读挂载用于相册引用；自动选片与精修交付还需为具体项目配置 RAW、SELECTED、FINAL、HISTORY 目录。
+
+Camera 目录权限：若目录仅所有者可读，使用 `compose.nas-camera.yaml` 并将 `NAS_CAMERA_UID` 设置为 Camera 的实际所有者 UID（飞牛常见值为 1000，以实际检查为准）。此覆盖配置仅调整容器内 PicPeak 的运行身份，Camera 仍只读，保留源目录权限。应用后重建容器，再展开 Camera 验证。
