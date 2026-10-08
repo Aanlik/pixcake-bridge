@@ -1,13 +1,26 @@
 # PicPeak 简体中文 + PixCake Bridge 一体化版
 
-为飞牛 fnOS NAS 提供中文客户选片、NAS 照片目录关联、待精修 RAW 整理和精修成片交付。默认使用 **一个 Docker 镜像、一个容器**；PicPeak 和 Bridge 保留独立代码、进程和数据库，便于跟随官方更新。
+面向支持 Docker 的 NAS 与服务器，提供中文客户选片、已有照片文件夹关联、待精修 RAW 整理和精修成片交付。系统不依赖特定 NAS 品牌，也不调用修图软件 API。默认使用 **一个 Docker 镜像、一个容器**；PicPeak 和 Bridge 保留独立代码、进程和数据库，便于跟随官方更新。
 
 当前固定镜像：`picpeak-pixcake:3.134.1-zh.6-bridge.0.1.1`。
 包含 PicPeak 3.134.1 中文版及本轮中文审校，Bridge 0.1.1。不要使用 `latest`。
 
+## 平台与软件适用范围
+
+| 平台 | 部署方式 | 验证范围 |
+|---|---|---|
+| 飞牛 fnOS | Docker / Compose | 已有双容器 NAS 验证；本轮一体化尚未迁移到 NAS |
+| 群晖 DSM | 设备支持的 Container Manager / Docker 与 Compose | 架构适用，尚未实机验收 |
+| 威联通 QNAP | 设备支持的 Container Station 与 Compose | 架构适用，尚未实机验收 |
+| 其他 NAS、Linux Docker 主机 | Docker Engine 与 Compose | 一体化 linux/amd64 镜像已在隔离容器验证 |
+
+不是所有 NAS 型号都支持 Docker。当前交付镜像是 linux/amd64，ARM 设备需另行构建和验证。各平台首次安装时需配置真实照片路径、目录权限、端口及 API Token；“通用”不代表在不同 NAS 上可以原样照抄路径。
+
+Photoshop、Lightroom、像素蛋糕等软件通过文件夹接入，通常在 Windows/macOS 修图电脑上运行，不打包进本镜像，也不要求在 NAS 内运行。`PixCake Bridge` 是历史项目名称，实际同步机制不依赖像素蛋糕。
+
 ## 工作流程
 
-相机 RAW/JPG → NAS → 客户中文选片（选为精修）→ `03_SELECTED_RAW` → 像素蛋糕 → `04_FINAL` → 自动替换客户页面上的原照片。
+相机 RAW/JPG → NAS → 客户中文选片（选为精修）→ `03_SELECTED_RAW` → Photoshop / Lightroom / 像素蛋糕等修图软件 → `04_FINAL` → 自动替换客户页面上的原照片。
 
 Bridge 按 `source_filename` 匹配原片，等待成片稳定后计算 SHA-256；同名返修再次同步，保留原 photo_id、评论、评分、选片和分享链接。默认保留最近 3 个成片版本。SELECTING 阶段取消可清理待精修副本，EDITING 后取消仅标记，支持后续追加。原片始终只读。RAW 支持 ARW/CR3/CR2/NEF/RAF/DNG/ORF/RW2；第一版成片支持 JPG/JPEG/PNG，默认单文件 100 MiB，要求文件 stem 唯一一致。
 
@@ -21,7 +34,7 @@ Bridge 按 `source_filename` 匹配原片，等待成片稳定后计算 SHA-256�
 - 开启同步后，一个服务故障会让整个容器显示 unhealthy。Docker 的 restart 策略不会因 unhealthy 自动重启；应查日志处理，不能把健康检查当作自动修复。
 - 两个服务升级、容器重启时会同时短暂中断。
 
-## 飞牛部署
+## 通用 Docker 部署
 
 ### 1. 准备目录
 
@@ -36,7 +49,7 @@ Bridge 按 `source_filename` 匹配原片，等待成片稳定后计算 SHA-256�
   05_HISTORY/
 ```
 
-确认真实 NAS 绝对路径，给 UID/GID 1001 读取 RAW、PROOF、FINAL 和写入 SELECTED、HISTORY 的权限。镜像只调整数据卷权限，不会自动修改摄影目录权限。通过 Docker 的只读挂载保护原片；不要可写挂载整个 Camera 或摄影项目根目录。
+确认真实宿主机绝对路径，给 UID/GID 1001 读取 RAW、PROOF、FINAL 和写入 SELECTED、HISTORY 的权限。镜像只调整数据卷权限，不会自动修改摄影目录权限。通过 Docker 的只读挂载保护原片；不要可写挂载整个 Camera 或摄影项目根目录。
 
 ### 2. 构建或导入镜像
 
@@ -46,7 +59,7 @@ Bridge 按 `source_filename` 匹配原片，等待成片稳定后计算 SHA-256�
 ./docker/integrated/build.sh
 ```
 
-默认构建 linux/amd64（常见 x86 飞牛 NAS）；ARM NAS 构建时设置 `PLATFORM=linux/arm64`，应另行验收。构建先使用 PicPeak 自己的 Dockerfile，再组合 Bridge。独立执行 Compose build 前必须先构建固定版本 PicPeak 基础镜像。
+默认构建 linux/amd64（适用于 x86 NAS 或服务器）；ARM NAS 构建时设置 `PLATFORM=linux/arm64`，应另行验收。构建先使用 PicPeak 自己的 Dockerfile，再组合 Bridge。独立执行 Compose build 前必须先构建固定版本 PicPeak 基础镜像。
 
 离线导入：
 
@@ -54,7 +67,7 @@ Bridge 按 `source_filename` 匹配原片，等待成片稳定后计算 SHA-256�
 docker save -o picpeak-pixcake-amd64.tar picpeak-pixcake:3.134.1-zh.6-bridge.0.1.1
 ```
 
-在飞牛 Docker 镜像管理中导入 tar，再创建 Compose 项目。
+在 NAS 容器管理界面导入 tar 并创建 Compose 项目；普通 Docker 主机可执行 `docker load -i picpeak-pixcake-amd64.tar`。此导入操作不需要重新构建镜像。
 
 ### 3. 首次初始化
 
@@ -77,7 +90,7 @@ docker compose up -d --force-recreate
 
 ### 4. 关联 NAS 照片
 
-新建或管理项目时选择“关联 NAS 文件夹”，用 External Media Reference Mode 引用 `/external-media/项目名`。PROOF 挂载只读。引用既有 Home/Camera 时设置 `NAS_CAMERA_ROOT` 并使用：
+新建或管理项目时选择“关联 NAS 文件夹”，用 External Media Reference Mode 引用 `/external-media/项目名`。PROOF 挂载只读。引用其他已有照片文件夹时，将 `NAS_CAMERA_ROOT` 设置为该目录的真实绝对路径并使用下面的覆盖文件；文件名中的 nas-camera 是历史名称，适用于其他平台文件夹：
 
 ```sh
 docker compose -f compose.yaml -f compose.nas-camera.yaml up -d
@@ -85,11 +98,30 @@ docker compose -f compose.yaml -f compose.nas-camera.yaml up -d
 
 在页面选择具体拍摄文件夹，避免把全部 Camera 导入同一项目。RAW 与待精修、成片目录仍按项目配置独立挂载；Camera 入口不会自动替代 RAW 映射。
 
-### 5. 像素蛋糕与客户分享
+### 5. 使用任意基于文件夹的修图工作流
 
-像素蛋糕读取 `03_SELECTED_RAW`，导出到 `04_FINAL`，保留原文件 stem。目录追加 RAW 后若软件不能自动识别，刷新或重新导入目录。
+通过 SMB 或本地挂载，在修图电脑上访问 `03_SELECTED_RAW` 和 `04_FINAL`。电脑中的路径与容器中的路径可以不同，只要指向同一批实际文件。
+
+| 修图软件 | 获取待精修照片 | 输出成片 |
+|---|---|---|
+| Photoshop / Camera Raw | 打开待精修目录中的 RAW，按需批量处理 | 保存或导出 JPG/JPEG/PNG 到成片目录 |
+| Lightroom | 将待精修照片导入目录／图库；目录追加后按需同步或重新导入 | 设置导出预设，输出到成片目录，保留原 stem |
+| 像素蛋糕 | 从待精修目录导入照片 | 将导出位置设为成片目录，保留原 stem |
+| 其他修图软件 | 能读取项目原片并导出所支持的成片格式即可 | 同样遵守输出目录及命名约定 |
+
+例如 `DSC00125.ARW` 对应 `DSC00125.JPG`。第一次在软件里设置输出路径、格式和命名规则后，切换软件通常无需修改 Bridge。若 RAW、SELECTED 或 FINAL 的实际目录改变，仍需修改挂载与项目配置。PSD、TIFF、XMP 等工作文件不属于当前自动交付格式；可以保存在其他工作目录，最终另导出 JPG/JPEG/PNG。
+
+Bridge 不会操作软件的项目、图库或编辑进度。追加 RAW 是否自动出现、取消后是否影响已有软件项目，由软件自身决定；不能将目录同步等同于 PS/LR 项目自动同步。
+
+### 6. 客户分享
 
 客户入口仅转发 PicPeak；Bridge 不对公网开放。FN Connect 可用于摄影师远程管理，但不能作为已验证的匿名客户分享入口。临时可使用独立 HTTPS 穿透入口，之后迁移公网 IP + DDNS；从现在使用固定自有域名，设置 PicPeak 站点地址，尽量保留已有分享链接。原片上传、Bridge 同步均不依赖公网。
+
+## 各平台目录配置
+
+`.env.example` 中的 `/vol1/...` 是飞牛示例，应替换成你实际设备的共享目录路径。群晖可能使用 `/volume1/...`，威联通可能使用 `/share/...`，Linux 主机也可使用自选路径；应以设备实际路径为准。
+
+容器内 `/raw/项目名`、`/selected/项目名`、`/final/项目名`、`/history/项目名` 与 `projects.json` 保持一致。项目数增加时，每个项目都需要独立配置并挂载；创建 PicPeak 相册不会自动完成 Bridge 项目绑定。共享目录权限由宿主机管理，Docker 只读挂载保护 RAW/PROOF/FINAL，SELECTED/HISTORY 按需可写。
 
 ## 从双容器迁移
 
@@ -110,4 +142,4 @@ GitHub Actions `Integrated image` 检查锁定中文 Fork 提交并构建一体�
 
 ## 测试与限制
 
-见 [测试计划](docs/testing.md)、[原工作流验证](docs/verification.md)、[一体化验证](docs/integrated-verification.md)。真实设备浏览器、FN Connect、像素蛋糕自动发现及 ARM 支持分别验收，不能用容器启动测试代替。PicPeak 可连接外部 PostgreSQL；Bridge 通过 SQLAlchemy 保留迁移路径，需额外安装 postgres 可选依赖并执行数据迁移，不是改连接字符串即可完成。
+见 [测试计划](docs/testing.md)、[原工作流验证](docs/verification.md)、[一体化验证](docs/integrated-verification.md)。群晖、威联通等平台实机、真实设备浏览器、外网分享、各修图软件目录发现及 ARM 支持分别验收，不能用容器启动测试代替。PicPeak 可连接外部 PostgreSQL；Bridge 通过 SQLAlchemy 保留迁移路径，需额外安装 postgres 可选依赖并执行数据迁移，不是改连接字符串即可完成。
