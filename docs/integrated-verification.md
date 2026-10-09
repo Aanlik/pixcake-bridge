@@ -1,6 +1,19 @@
 # 一体化镜像验证
 
-## 当前固定版
+## 当前固定版：zh.14 / Bridge 0.1.4
+
+2026-10-09，linux/amd64，镜像 `picpeak-pixcake:3.134.1-zh.14-bridge.0.1.4`。PicPeak 中文 Fork 提交 `3a4beae15025dc030db8074b50994f83fed4adcd`，Bridge 提交 `c5d8b2a4f3df14fff85b57d5ba190e298e211154`。
+
+- 一体化镜像构建成功；容器启动、PicPeak 与 Bridge 健康检查、Python 3.12、进程异常恢复、整容器重启及 Bridge 状态卷保留均通过。
+- 未配置 API Token 时 PicPeak 初始化与健康检查通过。
+- PicPeak 定向后端测试 7 项、客户/摄影师前端测试 3 项、Bridge 全套测试 61 项通过。
+- PicPeak 前端类型检查与生产构建通过；简体中文 4792 个键、178 个复数键和插值变量检查通过；翻译引用检查通过。
+- Compose 基础文件与 Camera 权限覆盖文件均通过解析。当前 Compose 只映射 PicPeak 端口，Camera 为只读挂载，Bridge 不映射宿主机端口。
+- NAS 导入包：`picpeak-pixcake-amd64-3.134.1-zh.14-bridge.0.1.4.tar`，SHA-256：`5d6cdcfca76a2897aeae22c87e4db9fc830fe52ebc3ad0394fdd01ff9f8e555a`。
+
+容器 smoke 验证了真实 PicPeak/Bridge 进程组合，但未连接客户的 NAS，也未使用真实 Public API Token 执行选片到成片替换的完整容器级 E2E。选片新增/取消、返修版本、RAW 校验、异常与恢复由 Bridge 单元测试及 PicPeak API 集成测试覆盖；真实 fnOS 文件权限、浏览器、像素蛋糕与外网客户入口仍需现场验收。NAS 尚未更新。
+
+## zh.10 历史验证
 
 2026-10-09，linux/amd64，镜像 `picpeak-pixcake:3.134.1-zh.10-bridge.0.1.2`，基于 PicPeak 中文 Fork 提交 `8f05c86b6ce81b57ac5eed2aa14cca542303c766`，Bridge 0.1.2。GitHub Actions [构建与容器验证](https://github.com/Aanlik/pixcake-bridge/actions/runs/37887261907)已通过。
 
