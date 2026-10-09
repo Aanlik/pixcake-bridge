@@ -220,9 +220,11 @@ class Engine:
                     self.record_error(s, project, f"照片 {photo.photo_id}: 旧版本上传结果未知，先核对 PicPeak 后再重试")
                     failed = True
                     continue
-                # Cancellation after editing begins withdraws future work but
-                # does not remove an already delivered image or its history.
-                if photo.cancelled:
+                # Preserve an edit already in progress when the customer
+                # withdraws before the first delivery. After delivery, a
+                # withdrawal blocks new revisions until the photo is selected
+                # again, while keeping the delivered image and its history.
+                if photo.cancelled and photo.delivery_hash:
                     continue
                 key = stem_key(photo.source_filename)
                 version = self.current_version(s, photo) + 1

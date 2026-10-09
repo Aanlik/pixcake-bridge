@@ -123,6 +123,23 @@ async def test_cancel_after_delivery_blocks_next_version_until_reselected(tmp_pa
     db.dispose()
 
 
+async def test_cancel_during_editing_keeps_first_delivery_in_progress(tmp_path):
+    engine, client, cfg, db = setup(tmp_path)
+    await engine.sync()
+    engine.set_stage(7, "EDITING")
+    client.rows[0]["color_label"] = None
+    await engine.sync()
+    assert (cfg.projects[0].selected / "DSC00001.ARW").exists()
+    first = cfg.projects[0].final / "V1" / "DSC00001.JPG"
+    first.parent.mkdir(exist_ok=True)
+    first.write_bytes(b"edit already in progress")
+    await engine.sync()
+    await engine.sync()
+    assert len(client.uploads) == 1
+    assert client.rows[0]["original_filename"].startswith("DSC00001.__bridge_")
+    db.dispose()
+
+
 async def test_lost_response_reconciles_without_duplicate(tmp_path):
     engine, client, cfg, db = setup(tmp_path)
     (cfg.projects[0].final / "DSC00001.JPG").write_bytes(b"final")
@@ -220,12 +237,12 @@ async def test_large_selection_workflow(tmp_path, count):
         (cfg.projects[0].final / "V1" / row["source_filename"]).write_bytes(f"final-{row['id']}".encode())
     await engine.sync()
     await engine.sync()
-    assert len(client.uploads) == 52
+    assert len(client.uploads) == 53
     revision = engine.prepare_next_version_folder(7, 4, 1)
     (Path(revision["folder"]) / "DSC00004.JPG").write_bytes(b"revision")
     await engine.sync()
     await engine.sync()
-    assert len(client.uploads) == 53
+    assert len(client.uploads) == 54
     assert {p.name: sha256(p) for p in cfg.projects[0].raw.iterdir()} == before
     db.dispose()
 

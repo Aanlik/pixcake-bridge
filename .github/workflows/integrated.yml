@@ -22,8 +22,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Aanlik/picpeak-zh
-          ref: a9bd2d98b9f60cd773cf40bde7a8672b8f57f21b
+          ref: feat/zh-cn
           path: picpeak-source
+      - name: Verify the pinned PicPeak source
+        run: test "$(git -C picpeak-source rev-parse HEAD)" = "a9bd2d984ec00d663ee1a3764e0bd4c2564adec1"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:
@@ -34,18 +36,18 @@ jobs:
           cache-from: type=gha,scope=integrated-picpeak
           cache-to: type=gha,mode=max,scope=integrated-picpeak
       - name: Combine independent services
-        run: docker build -f Dockerfile.integrated -t picpeak-pixcake:3.134.1-zh.18-bridge.0.1.5 .
+        run: docker build -f Dockerfile.integrated -t picpeak-pixcake:3.134.1-zh.18-bridge.0.1.6 .
       - name: Actual container smoke and restart
         run: ./docker/integrated/smoke.sh
       - name: Export NAS import archive
         if: github.event_name == 'workflow_dispatch' && inputs.publish
-        run: docker save -o picpeak-pixcake-amd64-3.134.1-zh.18-bridge.0.1.5.tar picpeak-pixcake:3.134.1-zh.18-bridge.0.1.5
+        run: docker save -o picpeak-pixcake-amd64-3.134.1-zh.18-bridge.0.1.6.tar picpeak-pixcake:3.134.1-zh.18-bridge.0.1.6
       - name: Keep NAS import archive for 7 days
         if: github.event_name == 'workflow_dispatch' && inputs.publish
         uses: actions/upload-artifact@v4
         with:
-          name: picpeak-pixcake-amd64-3.134.1-zh.18-bridge.0.1.5
-          path: picpeak-pixcake-amd64-3.134.1-zh.18-bridge.0.1.5.tar
+          name: picpeak-pixcake-amd64-3.134.1-zh.18-bridge.0.1.6
+          path: picpeak-pixcake-amd64-3.134.1-zh.18-bridge.0.1.6.tar
           retention-days: 7
       - name: Publish versioned package
         if: github.event_name == 'workflow_dispatch' && inputs.publish
@@ -54,6 +56,6 @@ jobs:
         run: |
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           owner=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
-          tag="ghcr.io/$owner/picpeak-pixcake:3.134.1-zh.18-bridge.0.1.5"
-          docker tag picpeak-pixcake:3.134.1-zh.18-bridge.0.1.5 "$tag"
+          tag="ghcr.io/$owner/picpeak-pixcake:3.134.1-zh.18-bridge.0.1.6"
+          docker tag picpeak-pixcake:3.134.1-zh.18-bridge.0.1.6 "$tag"
           docker push "$tag"

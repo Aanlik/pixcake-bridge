@@ -1,7 +1,7 @@
 name: pixcake
 services:
   picpeak:
-    image: ${STACK_IMAGE:-picpeak-pixcake:3.134.1-zh.18-bridge.0.1.5}
+    image: ${STACK_IMAGE:-picpeak-pixcake:3.134.1-zh.18-bridge.0.1.6}
     build:
       context: .
       dockerfile: Dockerfile.integrated

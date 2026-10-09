@@ -141,7 +141,8 @@ async def main(args):
         await engine.sync()
         with sessions() as s:
             assert len(list(s.scalars(select(Delivery).where(Delivery.state == "SUCCESS")))) == 53
-        Image.new("RGB", (128, 96), (210, 30, 70)).save(final / "DSC00004.JPG")
+        revision = engine.prepare_next_version_folder(eid, photo_id(4), 1)
+        Image.new("RGB", (128, 96), (210, 30, 70)).save(Path(revision["folder"]) / "DSC00004.JPG")
         await engine.sync()
         await engine.sync()
         # The official API omits photos while replacement thumbnails are
@@ -183,9 +184,9 @@ async def main(args):
         # Verify actual downloaded final bytes, not only the filename marker.
         managed = fixture_db_query(args.container, "SELECT path FROM photos WHERE id=" + str(photo_id(4)))[0]["path"]
         remote_hash = docker("exec", args.container, "sha256sum", "/data/storage/events/active/" + managed).split()[0]
-        assert remote_hash == sha256(final / "DSC00004.JPG")
+        assert remote_hash == sha256(Path(revision["folder"]) / "DSC00004.JPG")
         assert {p.name: sha256(p) for p in raw.iterdir()} == before
-        report = {"proof_count": args.count, "selected_initial": 50, "added": 5, "cancelled_selecting": 2, "cancelled_editing_raw_preserved": True, "deliveries": 54, "raw_sha256_unchanged": args.count, "photo_id_feedback_sort_share_preserved": True, "restart_duplicate_uploads": 0, "guest_share_path": share_path, "event_id": eid, "slug": slug, "fixture_root": str(root), "tested_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        report = {"proof_count": args.count, "selected_initial": 50, "added": 5, "cancelled_selecting": 2, "cancelled_editing_raw_preserved": True, "deliveries": 54, "revision_version": revision["version"], "raw_sha256_unchanged": args.count, "photo_id_feedback_sort_share_preserved": True, "restart_duplicate_uploads": 0, "guest_share_path": share_path, "event_id": eid, "slug": slug, "fixture_root": str(root), "tested_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
         # Credentials deliberately excluded; this report is safe to publish.
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
