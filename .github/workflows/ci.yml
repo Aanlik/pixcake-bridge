@@ -17,7 +17,8 @@ jobs:
       - run: uv run pytest -q
       - name: Compose structure and deployment policy
         env:
-          PHOTO_PROJECT: /tmp/shoot
+          NAS_CAMERA_ROOT: /tmp/camera
+          NAS_DELIVERY_ROOT: /tmp/delivery
           PICPEAK_TOKEN: pp_live_ci_placeholder
           BRIDGE_ADMIN_PASSWORD: ci-placeholder-password
         run: uv run python scripts/preflight.py
