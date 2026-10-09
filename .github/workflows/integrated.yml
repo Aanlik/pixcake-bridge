@@ -37,6 +37,16 @@ jobs:
         run: docker build -f Dockerfile.integrated -t picpeak-pixcake:3.134.1-zh.10-bridge.0.1.2 .
       - name: Actual container smoke and restart
         run: ./docker/integrated/smoke.sh
+      - name: Export NAS import archive
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        run: docker save -o picpeak-pixcake-amd64-3.134.1-zh.10-bridge.0.1.2.tar picpeak-pixcake:3.134.1-zh.10-bridge.0.1.2
+      - name: Keep NAS import archive for 7 days
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: picpeak-pixcake-amd64-3.134.1-zh.10-bridge.0.1.2
+          path: picpeak-pixcake-amd64-3.134.1-zh.10-bridge.0.1.2.tar
+          retention-days: 7
       - name: Publish versioned package
         if: github.event_name == 'workflow_dispatch' && inputs.publish
         env:
