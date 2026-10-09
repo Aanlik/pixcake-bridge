@@ -2,7 +2,7 @@
 
 面向支持 Docker 的 NAS 与服务器，提供中文客户选片、已有照片文件夹关联、待精修 RAW 整理和精修成片交付。系统不依赖特定 NAS 品牌，也不调用修图软件 API。默认使用 **一个 Docker 镜像、一个容器**；PicPeak 和 Bridge 保留独立代码、进程和数据库，便于跟随官方更新。
 
-当前固定镜像：`picpeak-pixcake:3.134.1-zh.10-bridge.0.1.2`，基于中文 Fork 提交 `8f05c86b6ce81b57ac5eed2aa14cca542303c766`。
+当前固定镜像：`picpeak-pixcake:3.134.1-zh.11-bridge.0.1.2`，基于中文 Fork 提交 `5b9237d386ba7d7113e2ab8025240428ab4a7889`。
 
 首次安装创建管理员账号后，在“设置拍摄类型”中输入中文名称即可；链接前缀自动生成，也可选择“稍后设置”使用现有类型。已有安装无需重做初始化，更新镜像时保留两个数据卷。
 包含 PicPeak 3.134.1 中文版及本轮中文审校，Bridge 0.1.2。不要使用 `latest`。
@@ -68,7 +68,7 @@ Bridge 按 `source_filename` 匹配原片，等待成片稳定后计算 SHA-256�
 离线导入：
 
 ```sh
-docker save -o picpeak-pixcake-amd64.tar picpeak-pixcake:3.134.1-zh.10-bridge.0.1.2
+docker save -o picpeak-pixcake-amd64.tar picpeak-pixcake:3.134.1-zh.11-bridge.0.1.2
 ```
 
 在 NAS 容器管理界面导入 tar 并创建 Compose 项目；普通 Docker 主机可执行 `docker load -i picpeak-pixcake-amd64.tar`。此导入操作不需要重新构建镜像。
