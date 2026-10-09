@@ -1,14 +1,15 @@
 # 一体化镜像验证
 
-## 当前固定版：zh.18 / Bridge 0.1.5
+## 当前固定版：zh.18 / Bridge 0.1.6
 
-2026-10-09，linux/amd64，镜像 `picpeak-pixcake:3.134.1-zh.18-bridge.0.1.5`，镜像标识 `sha256:1d97c50f4735b0562afe739ee530dd42cec9e444cec536e9595aa606f586cdd0`，PicPeak 中文 Fork 提交 `a9bd2d984ec00d663ee1a3764e0bd4c2564adec1`，Bridge 发布版本 0.1.5。
+2026-10-09，linux/amd64，镜像 `picpeak-pixcake:3.134.1-zh.18-bridge.0.1.6`，镜像标识 `sha256:6124c258589d8c5c1ca3f7c3ff9d9db007e6e4aae56cdb0c5fd813fb8262e84a`，PicPeak 中文 Fork 提交 `a9bd2d984ec00d663ee1a3764e0bd4c2564adec1`，Bridge 提交 `f2c055fd293a60a2ab49d75f20916b83ee69e709`，Bridge 发布版本 0.1.6。
 
-- PicPeak AIO 本地镜像编译、Bridge 66 项测试、两服务启动、Bridge 进程恢复、整容器重启和状态卷保留检查通过。
+- PicPeak AIO 本地镜像编译、Bridge 67 项测试、容器健康检查、Bridge 进程恢复、整个容器重启、状态卷保留和部署预检通过。
+- 100 张真实 PicPeak 容器 E2E 通过：客户选 50、追加 5、取消 2，精修中撤回保留 RAW，交付 V1 和返修 V2 共 54 次；重启后没有重复上传，100 个合成 RAW 的 SHA-256 全部不变。
 - 本轮 PicPeak 前端生产构建、中文 locale parity、返修流程前端测试、7 项返修 API 测试及 ESLint 检查通过。
-- NAS 导入包：`picpeak-pixcake-amd64-3.134.1-zh.18-bridge.0.1.5.tar`，SHA-256：`66412f4001d383e6e26ead85f50c8367ad1c81e74a231f180adb8ce18ddddcaf`，246 MiB。该包现位于项目交付目录的 `outputs/`。
+- NAS 导入包：`picpeak-pixcake-amd64-3.134.1-zh.18-bridge.0.1.6.tar`，SHA-256：`1c72c17637d8c77062080298d155c79d44ef17e89ea8b4d9311f4aa3db7e0451`，246 MiB。该包现位于项目交付目录的 `outputs/`。
 
-本机容器构建与启动检查已通过；飞牛 NAS 实际切换和页面验收仍在本次部署流程中。
+飞牛 fnOS 已切换至上述固定版并确认容器正常运行。PicPeak 页面显示“同步服务已连接”；项目照片、客户选片/交付状态和客户需求仍可正常读取。更新前已完成 PicPeak 备份及 PicPeak、Bridge SQLite 数据库备份；原有照片挂载、只读设置和持久化数据卷均保持不变。
 
 ## zh.17 历史验证
 
