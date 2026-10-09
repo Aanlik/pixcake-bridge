@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pixcake-bridge"
-version = "0.1.4"
+version = "0.1.5"
 description = "PicPeak proofing to NAS RAW and PixCake final delivery bridge"
 requires-python = ">=3.12"
 dependencies = ["fastapi==0.115.12", "uvicorn==0.34.2", "httpx==0.28.1", "sqlalchemy==2.0.41", "watchfiles==1.0.5", "jinja2==3.1.6", "python-multipart==0.0.20"]

@@ -3,7 +3,7 @@ import uuid
 from collections import Counter
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from .client import ApiError
 from .files import FINAL_EXTENSIONS, RAW_EXTENSIONS, Stability, index_files, match_raw, materialize, safe_file, safe_name, sha256, snapshot, stem_key
@@ -40,11 +40,54 @@ class Engine:
             p = s.scalar(select(Project).where(Project.event_id == event_id))
             if p is None:
                 raise ValueError("项目不存在")
-            if STAGES.index(stage) < STAGES.index(p.stage):
-                raise ValueError("阶段不能倒退，避免自动删除已进入精修的 RAW")
             p.stage = stage
+            if stage in {"EDITING", "DELIVERED", "ARCHIVED"}:
+                p.has_entered_editing = True
             s.commit()
         self.wake.set()
+
+    def current_version(self, s, photo):
+        return int(s.scalar(
+            select(func.count(Delivery.id)).where(
+                Delivery.photo_pk == photo.id,
+                Delivery.state == "SUCCESS",
+            )
+        ) or 0)
+
+    def output_folder(self, cfg, version, *, create=False):
+        folder = cfg.final / f"V{int(version)}"
+        if folder.is_symlink():
+            raise ValueError("成片版本目录不能是符号链接")
+        if create:
+            folder.mkdir(parents=True, exist_ok=True)
+        if folder.exists():
+            safe_file_parent = cfg.final.resolve()
+            if not folder.is_dir() or folder.resolve().parent != safe_file_parent:
+                raise ValueError("成片版本目录越界或不是普通目录")
+        return folder
+
+    def prepare_next_version_folder(self, event_id, photo_id, expected_current_version=None):
+        cfg = next((item for item in self.config.projects if item.event_id == event_id), None)
+        if cfg is None:
+            raise ValueError("项目尚未绑定")
+        with self.sessions() as s:
+            project = s.scalar(select(Project).where(Project.event_id == event_id))
+            if project is None:
+                raise ValueError("项目尚未同步")
+            photo = s.scalar(select(Photo).where(Photo.project_id == project.id, Photo.photo_id == photo_id))
+            if photo is None:
+                raise ValueError("照片尚未同步到 Bridge")
+            current = self.current_version(s, photo)
+            if expected_current_version is not None and int(expected_current_version) != current:
+                raise ValueError("成片版本已更新，请刷新后重试")
+            version = current + 1
+            folder = self.output_folder(cfg, version, create=True)
+            try:
+                relative = folder.relative_to(self.config.delivery_root)
+                shown = Path(self.config.delivery_host_root) / relative if self.config.delivery_host_root else folder
+            except ValueError:
+                shown = folder
+            return {"version": version, "folder": str(shown)}
 
     def record_error(self, s, project, message):
         # No response bodies or credentials in persistent logs.
@@ -142,19 +185,24 @@ class Engine:
                 await asyncio.to_thread(materialize, raw, dest, self.config.materialize_mode)
             photo.selected_path, photo.materialized_hash = str(dest), digest
             photo.raw_path, photo.raw_hash = str(raw), digest
+            # The first export has a dedicated target. Revisions are created
+            # on demand by the authenticated request endpoint (V2, V3, ...).
+            if not photo.delivery_hash:
+                self.output_folder(cfg, 1, create=True)
         elif project.stage == "SELECTING" and photo.selected_path:
-            dest = Path(photo.selected_path)
-            if dest.exists() or dest.is_symlink():
-                safe_file(dest, cfg.selected)
-                if await asyncio.to_thread(sha256, dest) != photo.materialized_hash:
-                    raise ValueError("取消选片时副本已变更，保留文件待人工处理")
-                dest.unlink()
-            photo.selected_path = None
-        # EDITING and DELIVERED keep in-progress RAW even after cancellation.
+            if not project.has_entered_editing:
+                dest = Path(photo.selected_path)
+                if dest.exists() or dest.is_symlink():
+                    safe_file(dest, cfg.selected)
+                    if await asyncio.to_thread(sha256, dest) != photo.materialized_hash:
+                        raise ValueError("取消选片时副本已变更，保留文件待人工处理")
+                    dest.unlink()
+                photo.selected_path = None
+        # Once editing has started, cancelled RAW remains available even if
+        # the photographer later rolls the project stage back to SELECTING.
 
     async def finals(self, s, cfg, project, counts, remote_ids):
         failed = False
-        final_index = await asyncio.to_thread(index_files, cfg.final, FINAL_EXTENSIONS)
         for photo in s.scalars(select(Photo).where(Photo.project_id == project.id)):
             if not (photo.selected or photo.selected_path) or photo.error or photo.photo_id not in remote_ids:
                 continue
@@ -172,8 +220,22 @@ class Engine:
                     self.record_error(s, project, f"照片 {photo.photo_id}: 旧版本上传结果未知，先核对 PicPeak 后再重试")
                     failed = True
                     continue
+                # Cancellation after editing begins withdraws future work but
+                # does not remove an already delivered image or its history.
+                if photo.cancelled:
+                    continue
                 key = stem_key(photo.source_filename)
-                candidates = final_index.get(key, [])
+                version = self.current_version(s, photo) + 1
+                version_dir = self.output_folder(cfg, version)
+                candidates = await asyncio.to_thread(index_files, version_dir, FINAL_EXTENSIONS) if version_dir.is_dir() else {}
+                candidates = candidates.get(key, [])
+                # Keep compatibility with projects that exported their first
+                # delivery directly into 04_FINAL before version folders were
+                # introduced. A V1 export always wins when it exists alone.
+                if version == 1:
+                    legacy_index = await asyncio.to_thread(index_files, cfg.final, FINAL_EXTENSIONS)
+                    legacy = [p for p in legacy_index.get(key, []) if p.parent == cfg.final]
+                    candidates.extend(legacy)
                 if not candidates:
                     continue
                 if len(candidates) != 1 or counts[key] != 1:
@@ -203,9 +265,12 @@ class Engine:
                     safe_name(marker)
                     delivery = Delivery(photo_pk=photo.id, sha256=digest, marker=marker, snapshot=str(staged))
                     s.add(delivery)
-                elif delivery.state == "SUCCESS" and photo.delivery_hash != digest:
-                    # Deliberately restoring a previous render is a new upload.
-                    delivery.state, delivery.snapshot = "PENDING", str(staged)
+                elif delivery.state == "SUCCESS":
+                    # A byte-identical render was already delivered for this
+                    # photo. Keep the existing remote version instead of
+                    # uploading the same content again from a later folder.
+                    staged.unlink()
+                    continue
                 else:
                     if Path(delivery.snapshot).is_file():
                         staged.unlink()

@@ -1,13 +1,21 @@
 # 一体化镜像验证
 
-## 当前固定版：zh.17 / Bridge 0.1.4
+## 当前固定版：zh.18 / Bridge 0.1.5
+
+2026-10-09，linux/amd64，镜像 `picpeak-pixcake:3.134.1-zh.18-bridge.0.1.5`，镜像标识 `sha256:1d97c50f4735b0562afe739ee530dd42cec9e444cec536e9595aa606f586cdd0`，PicPeak 中文 Fork 提交 `a9bd2d984ec00d663ee1a3764e0bd4c2564adec1`，Bridge 发布版本 0.1.5。
+
+- PicPeak AIO 本地镜像编译、Bridge 66 项测试、两服务启动、Bridge 进程恢复、整容器重启和状态卷保留检查通过。
+- 本轮 PicPeak 前端生产构建、中文 locale parity、返修流程前端测试、7 项返修 API 测试及 ESLint 检查通过。
+- NAS 导入包：`picpeak-pixcake-amd64-3.134.1-zh.18-bridge.0.1.5.tar`，SHA-256：`66412f4001d383e6e26ead85f50c8367ad1c81e74a231f180adb8ce18ddddcaf`，246 MiB。该包现位于项目交付目录的 `outputs/`。
+
+本机容器构建与启动检查已通过；飞牛 NAS 实际切换和页面验收仍在本次部署流程中。
+
+## zh.17 历史验证
 
 2026-10-09，linux/amd64，镜像 `picpeak-pixcake:3.134.1-zh.17-bridge.0.1.4`，PicPeak 中文 Fork 提交 `6a5494e0b3759e408f2a8ffb3bbe6603f1dcfd9c`，Bridge 版本 0.1.4。
 
-- PicPeak AIO 本地镜像编译、双服务启动、Bridge 进程恢复、整容器重启、状态卷保留及无 API Token 初始化检查通过。
-- 中文完整性检查通过：4812 个键、190 个复数键；386 个文件中的 4632 个静态翻译引用检查通过。补齐了导致上一轮远端中文校验失败的 6 个简体中文复数键。
-- GitHub PicPeak AIO 编译和启动检查通过；上游完整前端测试仍报告 5 项失败（760 通过），涉及 no-email 发布提示、NAS 关联错误断言、产品用量目录数量、主题颜色检查和提醒页返回链接，与本次 locale 修复无关。详情见 [PicPeak 验证记录](https://github.com/Aanlik/picpeak-zh/actions/runs/37930587165)。
-- NAS 导入包：`releases/picpeak-pixcake-amd64-3.134.1-zh.17-bridge.0.1.4.tar`，SHA-256：`1d062d8c101f1cf23889419a12b105624004a32da3e7d051a1ab35e3ec4683ac`，246 MiB。
+- 中文完整性检查通过：4812 个键、190 个复数键；386 个文件中的 4632 个静态翻译引用检查通过。
+- NAS 导入包 SHA-256：`1d062d8c101f1cf23889419a12b105624004a32da3e7d051a1ab35e3ec4683ac`，246 MiB。
 
 本地构建和隔离容器验证不等同于 NAS 安装或真实客户浏览器验收。更新时保留原有 PicPeak 与 Bridge 数据卷、Camera 只读挂载、交付目录和 `.env`；导入镜像后使用此处固定标签更新 Compose，再用测试项目检查选片按钮和状态。
 

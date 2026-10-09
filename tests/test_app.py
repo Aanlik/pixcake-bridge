@@ -32,7 +32,7 @@ def test_admin_auth_actions_csrf(tmp_path):
         assert client.post("/api/projects/999/sync").status_code == 404
         assert client.post("/projects/7/stage", data={"stage": "EDITING"}, headers={"Origin": "http://evil.example"}).status_code == 403
         assert client.post("/projects/7/stage", data={"stage": "EDITING"}).status_code == 200
-        assert client.post("/projects/7/stage", data={"stage": "SELECTING"}).status_code == 400
+        assert client.post("/projects/7/stage", data={"stage": "SELECTING"}).status_code == 200
         assert client.post("/projects/7/retry").status_code == 400
         assert client.post("/projects/7/sync").status_code == 200
         assert client.post("/projects/999/sync").status_code == 404
@@ -96,4 +96,20 @@ def test_retry_requires_confirmation_for_unknown_upload(tmp_path):
         with engine.sessions() as session:
             delivery = session.scalar(select(Delivery))
             assert delivery.state == "PENDING"
+    db.dispose()
+
+
+def test_prepare_version_folder_and_reject_stale_version(tmp_path):
+    engine, remote, cfg, db = setup(tmp_path)
+    with engine.sessions() as session:
+        project = session.scalar(select(Project).where(Project.event_id == 7))
+        session.add(Photo(project_id=project.id, photo_id=1, source_filename="DSC00001.JPG", selected=True))
+        session.commit()
+    with TestClient(create_app(cfg, remote, start_workers=False)) as client:
+        client.auth = ("admin", cfg.admin_password)
+        prepared = client.post("/api/projects/7/photos/1/version-folder", json={"expected_current_version": 0})
+        assert prepared.status_code == 200
+        assert prepared.json() == {"version": 1, "folder": str(cfg.projects[0].final / "V1")}
+        stale = client.post("/api/projects/7/photos/1/version-folder", json={"expected_current_version": 1})
+        assert stale.status_code == 409
     db.dispose()

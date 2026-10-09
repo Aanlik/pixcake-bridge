@@ -67,19 +67,23 @@ async def test_selection_add_cancel_and_editing_protection(tmp_path):
     with engine.sessions() as s:
         photo = s.scalar(select(Photo).where(Photo.photo_id == 2))
         assert photo.cancelled
-    with pytest.raises(ValueError):
-        engine.set_stage(7, "SELECTING")
+    engine.set_stage(7, "SELECTING")
+    assert (cfg.projects[0].selected / "DSC00002.ARW").exists()
     db.dispose()
 
 
 async def test_hash_versions_restart_and_history(tmp_path):
     engine, client, cfg, db = setup(tmp_path)
     raw_before = sha256(cfg.projects[0].raw / "DSC00001.ARW")
-    final = cfg.projects[0].final / "DSC00001.JPG"
-    for i in range(5):
-        final.write_bytes(f"FINAL-{i}".encode())
+    for i in range(1, 6):
+        folder = cfg.projects[0].final / f"V{i}"
+        folder.mkdir(exist_ok=True)
+        (folder / "DSC00001.JPG").write_bytes(f"FINAL-{i}".encode())
         await engine.sync()
         await engine.sync()
+        if i < 5:
+            prepared = engine.prepare_next_version_folder(7, 1, i)
+            assert prepared["version"] == i + 1
     assert len(client.uploads) == 5
     assert len(list(cfg.projects[0].history.rglob("*.jpg"))) == 3
     db.dispose()
@@ -89,11 +93,33 @@ async def test_hash_versions_restart_and_history(tmp_path):
     await restarted.sync()
     assert len(client.uploads) == 5
     assert sha256(cfg.projects[0].raw / "DSC00001.ARW") == raw_before
-    # Restoring a previous rendering should replace the current remote version.
-    final.write_bytes(b"FINAL-1")
+    # Re-exporting an identical historical render remains hash-deduplicated.
+    (cfg.projects[0].final / "V6" / "DSC00001.JPG").parent.mkdir(exist_ok=True)
+    (cfg.projects[0].final / "V6" / "DSC00001.JPG").write_bytes(b"FINAL-1")
     await restarted.sync()
     await restarted.sync()
-    assert len(client.uploads) == 6
+    assert len(client.uploads) == 5
+    db.dispose()
+
+
+async def test_cancel_after_delivery_blocks_next_version_until_reselected(tmp_path):
+    engine, client, cfg, db = setup(tmp_path)
+    await engine.sync()
+    first = cfg.projects[0].final / "V1" / "DSC00001.JPG"
+    first.write_bytes(b"first delivery")
+    await engine.sync()
+    await engine.sync()
+    engine.set_stage(7, "EDITING")
+    next_folder = engine.prepare_next_version_folder(7, 1, 1)["folder"]
+    Path(next_folder, "DSC00001.JPG").write_bytes(b"revision")
+    client.rows[0]["color_label"] = None
+    await engine.sync()
+    assert len(client.uploads) == 1
+    assert Path(next_folder, "DSC00001.JPG").exists()
+    client.rows[0]["color_label"] = "green"
+    await engine.sync()
+    await engine.sync()
+    assert len(client.uploads) == 2
     db.dispose()
 
 
@@ -191,14 +217,15 @@ async def test_large_selection_workflow(tmp_path, count):
     await engine.sync()
     assert len(list(cfg.projects[0].selected.iterdir())) == 53
     for row in client.rows[2:55]:
-        (cfg.projects[0].final / row["source_filename"]).write_bytes(f"final-{row['id']}".encode())
+        (cfg.projects[0].final / "V1" / row["source_filename"]).write_bytes(f"final-{row['id']}".encode())
+    await engine.sync()
+    await engine.sync()
+    assert len(client.uploads) == 52
+    revision = engine.prepare_next_version_folder(7, 4, 1)
+    (Path(revision["folder"]) / "DSC00004.JPG").write_bytes(b"revision")
     await engine.sync()
     await engine.sync()
     assert len(client.uploads) == 53
-    (cfg.projects[0].final / "DSC00004.JPG").write_bytes(b"revision")
-    await engine.sync()
-    await engine.sync()
-    assert len(client.uploads) == 54
     assert {p.name: sha256(p) for p in cfg.projects[0].raw.iterdir()} == before
     db.dispose()
 

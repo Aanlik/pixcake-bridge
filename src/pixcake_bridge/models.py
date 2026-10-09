@@ -18,6 +18,9 @@ class Project(Base):
     event_id: Mapped[int] = mapped_column(unique=True)
     name: Mapped[str] = mapped_column(String(255))
     stage: Mapped[str] = mapped_column(String(16), default="SELECTING")
+    # Once editing has started, moving the visible stage backwards must never
+    # make cancellation delete a RAW that may already be in an editor.
+    has_entered_editing: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     connected: Mapped[bool] = mapped_column(Boolean, default=False)
     last_sync: Mapped[datetime | None] = mapped_column(DateTime)
 
@@ -82,6 +85,10 @@ def database(url):
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA busy_timeout=30000")
     Base.metadata.create_all(engine)
+    if "has_entered_editing" not in {c["name"] for c in inspect(engine).get_columns("projects")}:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE projects ADD COLUMN has_entered_editing BOOLEAN NOT NULL DEFAULT FALSE"))
+            conn.execute(text("UPDATE projects SET has_entered_editing = TRUE WHERE stage IN ('EDITING', 'DELIVERED', 'ARCHIVED')"))
     if "added_during_editing" not in {c["name"] for c in inspect(engine).get_columns("photos")}:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE photos ADD COLUMN added_during_editing BOOLEAN NOT NULL DEFAULT FALSE"))

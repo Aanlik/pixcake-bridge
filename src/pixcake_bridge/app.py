@@ -126,6 +126,7 @@ def create_app(config=None, client=None, start_workers=True):
             ))
             for delivery in deliveries:
                 versions_by_photo[delivery.photo_pk] = versions_by_photo.get(delivery.photo_pk, 0) + 1
+        project_cfg = next((item for item in engine.config.projects if item.event_id == event_id), None)
         photos = []
         for photo in entry["photos"]:
             version = versions_by_photo.get(photo.id, 0)
@@ -135,11 +136,18 @@ def create_app(config=None, client=None, start_workers=True):
                 "photo_id": photo.photo_id,
                 "source_filename": photo.source_filename,
                 "selected": bool(photo.selected),
+                "selection_cancelled": bool(photo.cancelled),
                 "added_during_editing": bool(photo.added_during_editing),
                 "cancelled": bool(photo.cancelled),
                 "raw_matched": bool(photo.raw_path),
                 "ready_for_editing": bool(photo.selected_path),
                 "current_version": version,
+                "next_version": version + 1,
+                "next_version_folder": str(
+                    (Path(engine.config.delivery_host_root) / project_cfg.selected.parent.name / "04_FINAL" / f"V{version + 1}")
+                    if engine.config.delivery_host_root
+                    else project_cfg.final / f"V{version + 1}"
+                ),
                 "delivered": version > 0,
                 "error": bool(photo.error),
                 "error_message": photo.error or (latest_delivery.error if latest_delivery else None),
@@ -169,6 +177,21 @@ def create_app(config=None, client=None, start_workers=True):
         except ValueError as exc:
             raise HTTPException(400, str(exc))
         return {"success": True, "stage": payload["stage"]}
+
+    @app.post("/api/projects/{event_id}/photos/{photo_id}/version-folder", dependencies=[Depends(authorize)])
+    async def prepare_version_folder(request: Request, event_id: int, photo_id: int):
+        if event_id not in {p.event_id for p in request.app.state.config.projects}:
+            raise HTTPException(404, "项目尚未绑定")
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        expected = payload.get("expected_current_version")
+        try:
+            return request.app.state.engine.prepare_next_version_folder(event_id, photo_id, expected)
+        except ValueError as exc:
+            status = 409 if "版本已更新" in str(exc) else 400
+            raise HTTPException(status, str(exc))
 
     @app.post("/api/projects/{event_id}/sync", dependencies=[Depends(authorize)])
     async def sync_project(request: Request, event_id: int):
