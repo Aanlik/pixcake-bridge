@@ -51,13 +51,12 @@ Camera/26-10-04/
   01_RAW/
   02_PROOF/
   PixCakeDelivery/
-    event-5-李嘉欣约拍/
-      03_SELECTED_RAW/
-      04_FINAL/
-      05_HISTORY/
+    03_SELECTED_RAW/
+    04_FINAL/
+    05_HISTORY/
 ```
 
-PicPeak 和 Bridge 对整个 Camera 根目录只读挂载；PicPeak 可从中选择 Proof 文件夹，Bridge 按项目引用的 RAW 子目录匹配原片。每个项目只把自己的 `PixCakeDelivery` 子目录单独挂载为可写，Camera/RAW 与其他项目仍为只读。Bridge 在该挂载内自动建立 `03_SELECTED_RAW`、`04_FINAL` 和 `05_HISTORY`。Bridge 以 `BRIDGE_UID`/`BRIDGE_GID` 运行，需有权限读取 Camera、写入项目专属交付目录；摄影师账号需能读取待精修目录并写入成片目录。镜像只调整 Bridge 数据卷权限，不会自动修改照片目录权限。
+PicPeak 和 Bridge 对整个 Camera 根目录只读挂载；PicPeak 可从中选择 Proof 文件夹，Bridge 按项目引用的 RAW 子目录匹配原片。每个项目只把自己的 `PixCakeDelivery` 子目录单独挂载为可写，Camera/RAW 与其他项目仍为只读。由于挂载本身已经对应一个项目，Bridge 会直接在其中建立 `03_SELECTED_RAW`、`04_FINAL` 和 `05_HISTORY`，不再重复创建项目名子目录。升级时会把旧版 `event-编号-项目名` 目录下的阶段文件夹迁到挂载根目录；遇到新旧目录同时有文件时会停止迁移并报错，不会覆盖文件。Bridge 以 `BRIDGE_UID`/`BRIDGE_GID` 运行，需有权限读取 Camera、写入项目专属交付目录；摄影师账号需能读取待精修目录并写入成片目录。镜像只调整 Bridge 数据卷权限，不会自动修改照片目录权限。
 
 先在 NAS 文件管理器中创建 `Camera/26-10-04/PixCakeDelivery`，然后设置 `.env` 的 `NAS_CAMERA_ROOT`、`NAS_PROJECT_5_DELIVERY_ROOT` 和 `PROJECT_DELIVERY_MOUNTS`。示例按 PicPeak 项目编号 5 和目录 `26-10-04` 配置；如编号或路径不同，请换成实际值。旧的 `/delivery` 挂载保留以兼容持久化的 Bridge 状态；新项目 5 的 PixCakeDelivery 单独挂载到 `/delivery-5`。Camera 继续只读。
 
@@ -114,7 +113,7 @@ PicPeak「新建项目 / 管理项目 → 关联 NAS 照片文件夹」中，从
 
 ### 5. 使用任意基于文件夹的修图工作流
 
-通过 SMB 或本地挂载，在修图电脑上访问 `NAS_CAMERA_ROOT/<项目资料目录>/PixCakeDelivery/event-<编号>-<项目名>/03_SELECTED_RAW` 和该项目下的 `04_FINAL`。电脑中的路径与容器中的路径可以不同，只要指向同一批实际文件。
+通过 SMB 或本地挂载，在修图电脑上访问 `NAS_CAMERA_ROOT/<项目资料目录>/PixCakeDelivery/03_SELECTED_RAW` 和同一目录下的 `04_FINAL`。电脑中的路径与容器中的路径可以不同，只要指向同一批实际文件。
 
 | 修图软件 | 获取待精修照片 | 输出成片 |
 |---|---|---|

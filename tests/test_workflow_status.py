@@ -1,6 +1,7 @@
 from sqlalchemy import select, create_engine, inspect
-from pixcake_bridge.models import Photo, database
+from pixcake_bridge.models import Photo, Project, database
 from test_engine import setup
+
 
 async def test_later_selections_survive_restart_and_cancellation(tmp_path):
     engine, client, cfg, db = setup(tmp_path, 2)
@@ -21,6 +22,7 @@ async def test_later_selections_survive_restart_and_cancellation(tmp_path):
         assert p.added_during_editing and p.cancelled and p.selected_path
     db.dispose()
 
+
 def test_upgrade_old_sqlite_preserves_photos(tmp_path):
     url = 'sqlite:///' + str(tmp_path / 'old.db')
     db = create_engine(url)
@@ -32,4 +34,18 @@ def test_upgrade_old_sqlite_preserves_photos(tmp_path):
     assert 'added_during_editing' in {x['name'] for x in inspect(db).get_columns('photos')}
     with db.connect() as c:
         assert c.exec_driver_sql('SELECT source_filename, added_during_editing FROM photos').one() == ('DSC00001.JPG', 0)
+    db.dispose()
+
+
+def test_archive_restore_returns_project_to_saved_stage(tmp_path):
+    engine, _client, _cfg, db = setup(tmp_path)
+    engine.set_stage(7, 'EDITING')
+    engine.set_stage(7, 'ARCHIVED')
+
+    assert engine.restore_stage(7) == 'EDITING'
+    with engine.sessions() as s:
+        project = s.scalar(select(Project).where(Project.event_id == 7))
+        assert project.stage == 'EDITING'
+        assert project.previous_stage is None
+        assert project.has_entered_editing
     db.dispose()

@@ -18,6 +18,7 @@ class Project(Base):
     event_id: Mapped[int] = mapped_column(unique=True)
     name: Mapped[str] = mapped_column(String(255))
     stage: Mapped[str] = mapped_column(String(16), default="SELECTING")
+    previous_stage: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Once editing has started, moving the visible stage backwards must never
     # make cancellation delete a RAW that may already be in an editor.
     has_entered_editing: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -89,6 +90,23 @@ def database(url):
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE projects ADD COLUMN has_entered_editing BOOLEAN NOT NULL DEFAULT FALSE"))
             conn.execute(text("UPDATE projects SET has_entered_editing = TRUE WHERE stage IN ('EDITING', 'DELIVERED', 'ARCHIVED')"))
+    if "previous_stage" not in {c["name"] for c in inspect(engine).get_columns("projects")}:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE projects ADD COLUMN previous_stage VARCHAR(16)"))
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE projects
+            SET previous_stage = CASE
+                WHEN EXISTS (
+                    SELECT 1 FROM photos
+                    JOIN deliveries ON deliveries.photo_pk = photos.id
+                    WHERE photos.project_id = projects.id AND deliveries.state = 'SUCCESS'
+                ) THEN 'DELIVERED'
+                WHEN has_entered_editing THEN 'EDITING'
+                ELSE 'SELECTING'
+            END
+            WHERE stage = 'ARCHIVED' AND previous_stage IS NULL
+        """))
     if "added_during_editing" not in {c["name"] for c in inspect(engine).get_columns("photos")}:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE photos ADD COLUMN added_during_editing BOOLEAN NOT NULL DEFAULT FALSE"))

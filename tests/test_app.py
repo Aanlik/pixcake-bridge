@@ -3,6 +3,7 @@ from sqlalchemy import select
 from urllib.parse import unquote_plus
 
 from pixcake_bridge.app import create_app
+from pixcake_bridge.config import ProjectConfig
 from pixcake_bridge.models import Delivery, Photo, Project
 from test_engine import setup
 
@@ -28,6 +29,8 @@ def test_admin_auth_actions_csrf(tmp_path):
         assert detail["event_id"] == 7
         assert detail["delivery_path"] == f"/nas/Projects/{tmp_path.name}"
         assert client.post("/api/projects/7/stage", json={"stage": "EDITING"}).json() == {"success": True, "stage": "EDITING"}
+        client.post("/api/projects/7/stage", json={"stage": "ARCHIVED"})
+        assert client.post("/api/projects/7/restore").json() == {"success": True, "stage": "EDITING"}
         assert client.post("/api/projects/7/stage", json={"stage": "UNKNOWN"}).status_code == 400
         assert client.post("/api/projects/7/sync").status_code == 200
         assert client.post("/api/projects/999/sync").status_code == 404
@@ -134,7 +137,6 @@ def test_auto_mount_creates_workspace_only_in_project_scoped_delivery_mount(tmp_
     }
     cfg.projects_file = tmp_path / "projects.json"
     db.dispose()
-
     with TestClient(create_app(cfg, remote, start_workers=False)) as client:
         client.auth = ("admin", cfg.admin_password)
         assert client.get("/api/projects/9/mount-status?raw_subdir=2026-10-04").json() == {"writable_mount_ready": True}
@@ -147,7 +149,7 @@ def test_auto_mount_creates_workspace_only_in_project_scoped_delivery_mount(tmp_
         assert response.status_code == 303
         created = next(project for project in cfg.projects if project.event_id == 9)
         assert created.raw == raw_job
-        assert created.selected == scoped_container / "event-9-2026-10-04" / "03_SELECTED_RAW"
+        assert created.selected == scoped_container / "03_SELECTED_RAW"
         assert created.selected.is_dir() and created.final.is_dir() and created.history.is_dir()
 
         cfg.project_delivery_mounts[10] = {
@@ -164,4 +166,29 @@ def test_auto_mount_creates_workspace_only_in_project_scoped_delivery_mount(tmp_
         assert response.status_code == 303
         assert not any(project.event_id == 10 for project in cfg.projects)
         assert "PixCakeDelivery 文件夹单独挂载" in unquote_plus(response.headers["location"])
+    db.dispose()
+
+
+def test_legacy_project_folder_is_moved_to_scoped_mount_without_overwrite(tmp_path):
+    engine, remote, cfg, db = setup(tmp_path)
+    mount = tmp_path / "PixCakeDelivery"
+    legacy = mount / "event-7-测试项目"
+    for name in ("03_SELECTED_RAW", "04_FINAL", "05_HISTORY"):
+        (legacy / name).mkdir(parents=True)
+    raw = cfg.projects[0].raw
+    (legacy / "03_SELECTED_RAW" / "DSC00001.ARW").write_bytes(b"raw-copy")
+    (legacy / "04_FINAL" / "V1").mkdir()
+    (legacy / "04_FINAL" / "V1" / "DSC00001.JPG").write_bytes(b"final")
+    cfg.delivery_root = mount
+    cfg.projects_file = tmp_path / "projects.json"
+    cfg.projects[0] = ProjectConfig(
+        "测试项目", 7, raw,
+        legacy / "03_SELECTED_RAW", legacy / "04_FINAL", legacy / "05_HISTORY",
+    )
+    cfg.migrate_legacy_delivery_layout()
+    assert cfg.projects[0].selected == mount / "03_SELECTED_RAW"
+    assert (mount / "03_SELECTED_RAW" / "DSC00001.ARW").read_bytes() == b"raw-copy"
+    assert (mount / "04_FINAL" / "V1" / "DSC00001.JPG").read_bytes() == b"final"
+    assert str(mount / "04_FINAL") in cfg.projects_file.read_text()
+    assert not legacy.exists()
     db.dispose()

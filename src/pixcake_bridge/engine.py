@@ -40,11 +40,28 @@ class Engine:
             p = s.scalar(select(Project).where(Project.event_id == event_id))
             if p is None:
                 raise ValueError("项目不存在")
+            if stage == "ARCHIVED" and p.stage != "ARCHIVED":
+                p.previous_stage = p.stage if p.stage in {"SELECTING", "EDITING", "DELIVERED"} else "SELECTING"
+            elif stage != "ARCHIVED":
+                p.previous_stage = None
             p.stage = stage
             if stage in {"EDITING", "DELIVERED", "ARCHIVED"}:
                 p.has_entered_editing = True
             s.commit()
         self.wake.set()
+
+    def restore_stage(self, event_id):
+        with self.sessions() as s:
+            p = s.scalar(select(Project).where(Project.event_id == event_id))
+            if p is None:
+                raise ValueError("项目不存在")
+            if p.stage == "ARCHIVED":
+                p.stage = p.previous_stage if p.previous_stage in {"SELECTING", "EDITING", "DELIVERED"} else "SELECTING"
+                p.previous_stage = None
+                s.commit()
+            stage = p.stage
+        self.wake.set()
+        return stage
 
     def current_version(self, s, photo):
         return int(s.scalar(
@@ -138,7 +155,13 @@ class Engine:
                                 # photographer's own green triage selecting RAW.
                                 was_selected = photo.selected
                                 photo.selected = item.get("color_label") == "green"
-                                if photo.selected and not was_selected and project.last_sync is not None and project.stage in {"EDITING", "DELIVERED"}:
+                                if photo.selected and photo.delivery_hash:
+                                    # Keeping an existing retouch means this is
+                                    # still the delivered photo, not a new pick.
+                                    photo.added_during_editing = False
+                                elif photo.selected and not was_selected and project.last_sync is not None and project.stage in {"EDITING", "DELIVERED"}:
+                                    # A deleted retouch is treated as a fresh
+                                    # additional selection if the client picks it again.
                                     photo.added_during_editing = True
                                 photo.cancelled = not photo.selected and (was_selected or photo.cancelled or bool(photo.selected_path))
                                 if counts[stem_key(source)] != 1:
@@ -203,6 +226,98 @@ class Engine:
                 photo.selected_path = None
         # Once editing has started, cancelled RAW remains available even if
         # the photographer later rolls the project stage back to SELECTING.
+
+    def _remove_selected_raw(self, cfg, photo):
+        if photo.selected_path:
+            destination = Path(photo.selected_path)
+            if destination.exists() or destination.is_symlink():
+                safe_file(destination, cfg.selected)
+                if photo.materialized_hash and sha256(destination) != photo.materialized_hash:
+                    raise ValueError("待精修 RAW 副本已变更，拒绝自动删除")
+                destination.unlink()
+        photo.selected_path = None
+        photo.materialized_hash = None
+        photo.raw_path = None
+        photo.raw_hash = None
+
+    async def withdraw_photo(self, event_id, photo_id, delete_delivered):
+        """Return one delivered photo to selection, optionally restoring Proof.
+
+        The original camera folder stays read-only. The only RAW removed here
+        is the Bridge-owned copy under 03_SELECTED_RAW.
+        """
+        async with self.lock:
+            cfg = next((item for item in self.config.projects if item.event_id == event_id), None)
+            if cfg is None:
+                raise ValueError("项目尚未绑定")
+            with self.sessions() as s:
+                project = s.scalar(select(Project).where(Project.event_id == event_id))
+                photo = s.scalar(select(Photo).where(Photo.project_id == project.id, Photo.photo_id == photo_id)) if project else None
+                if not photo or not photo.delivery_hash:
+                    raise ValueError("照片没有已交付的精修版本")
+
+                deliveries = list(s.scalars(
+                    select(Delivery).where(Delivery.photo_pk == photo.id).order_by(Delivery.updated.desc())
+                ))
+                successful = [item for item in deliveries if item.state == "SUCCESS"]
+                if not successful:
+                    raise ValueError("没有可撤回的精修交付")
+
+                if delete_delivered:
+                    if photo.selected_path:
+                        selected_copy = Path(photo.selected_path)
+                        if selected_copy.exists() or selected_copy.is_symlink():
+                            safe_file(selected_copy, cfg.selected)
+                            if photo.materialized_hash and await asyncio.to_thread(sha256, selected_copy) != photo.materialized_hash:
+                                raise ValueError("待精修 RAW 副本已变更，拒绝自动删除")
+                    final_index = await asyncio.to_thread(index_files, cfg.final, FINAL_EXTENSIONS)
+                    rendered_files = final_index.get(stem_key(photo.source_filename), [])
+                    for rendered in rendered_files:
+                        safe_file(rendered, cfg.final)
+                    for delivery in deliveries:
+                        snapshot_path = Path(delivery.snapshot)
+                        if snapshot_path.exists() or snapshot_path.is_symlink():
+                            safe_file(snapshot_path, cfg.history)
+
+                    # Recover the original proof from the read-only source
+                    # folder and replace the current PicPeak rendition in
+                    # place. This preserves the photo id and feedback rows.
+                    proof_index = await asyncio.to_thread(index_files, cfg.raw, FINAL_EXTENSIONS, {"PixCakeDelivery"})
+                    proof = match_raw(photo.source_filename, proof_index, cfg.raw)
+                    safe_file(proof, cfg.raw)
+                    await self.client.replace(event_id, photo.photo_id, proof, proof.name)
+
+                    # Remove only this photo's rendered outputs and Bridge
+                    # snapshots. Do not touch the Camera source or other stems.
+                    for rendered in rendered_files:
+                        rendered.unlink()
+                    for delivery in deliveries:
+                        snapshot_path = Path(delivery.snapshot)
+                        if snapshot_path.exists() or snapshot_path.is_symlink():
+                            snapshot_path.unlink()
+                        delivery.state = "WITHDRAWN"
+                        delivery.error = None
+                        delivery.updated = now()
+                    photo.delivery_hash = None
+                    photo.remote_filename = photo.source_filename
+                    photo.added_during_editing = False
+                    photo.cancelled = False
+                else:
+                    # Keep the latest rendered image visible, while detaching
+                    # its RAW from the active editing queue.
+                    if photo.selected_path:
+                        selected_copy = Path(photo.selected_path)
+                        if selected_copy.exists() or selected_copy.is_symlink():
+                            safe_file(selected_copy, cfg.selected)
+                            if photo.materialized_hash and await asyncio.to_thread(sha256, selected_copy) != photo.materialized_hash:
+                                raise ValueError("待精修 RAW 副本已变更，拒绝自动删除")
+                    photo.cancelled = True
+
+                self._remove_selected_raw(cfg, photo)
+                photo.selected = False
+                photo.error = None
+                s.commit()
+                return {"deleted": bool(delete_delivered), "current_version": self.current_version(s, photo)}
 
     async def finals(self, s, cfg, project, counts, remote_ids):
         failed = False

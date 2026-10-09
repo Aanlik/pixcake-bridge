@@ -123,6 +123,77 @@ async def test_cancel_after_delivery_blocks_next_version_until_reselected(tmp_pa
     db.dispose()
 
 
+async def test_withdraw_keep_delivery_returns_photo_to_proof_and_unlinks_raw(tmp_path):
+    engine, client, cfg, db = setup(tmp_path)
+    await engine.sync()
+    final = cfg.projects[0].final / "V1" / "DSC00001.JPG"
+    final.write_bytes(b"delivered")
+    await engine.sync()
+    await engine.sync()
+    assert (cfg.projects[0].selected / "DSC00001.ARW").exists()
+
+    result = await engine.withdraw_photo(7, 1, False)
+
+    assert result == {"deleted": False, "current_version": 1}
+    assert final.read_bytes() == b"delivered"
+    assert not (cfg.projects[0].selected / "DSC00001.ARW").exists()
+    with engine.sessions() as s:
+        photo = s.scalar(select(Photo).where(Photo.photo_id == 1))
+        assert photo.cancelled and not photo.selected and photo.delivery_hash
+        assert engine.current_version(s, photo) == 1
+
+    # Re-selection of the retained delivery stays in the delivered state.
+    client.rows[0]["color_label"] = None
+    await engine.sync()
+    client.rows[0]["color_label"] = "green"
+    await engine.sync()
+    with engine.sessions() as s:
+        photo = s.scalar(select(Photo).where(Photo.photo_id == 1))
+        assert photo.selected and not photo.added_during_editing and photo.delivery_hash
+    db.dispose()
+
+
+async def test_withdraw_delete_restores_proof_and_reselection_is_additional(tmp_path):
+    engine, client, cfg, db = setup(tmp_path)
+    proof = cfg.projects[0].raw / "DSC00001.JPG"
+    proof.write_bytes(b"proof bytes")
+    proof_hash = sha256(proof)
+    engine.set_stage(7, "EDITING")
+    await engine.sync()
+    final = cfg.projects[0].final / "V1" / "DSC00001.JPG"
+    final.write_bytes(b"retouched bytes")
+    await engine.sync()
+    await engine.sync()
+    assert client.rows[0]["original_filename"].startswith("DSC00001.__bridge_")
+    with engine.sessions() as s:
+        delivery = s.scalar(select(Delivery))
+        snapshot_path = Path(delivery.snapshot)
+        assert snapshot_path.is_file()
+
+    result = await engine.withdraw_photo(7, 1, True)
+
+    assert result == {"deleted": True, "current_version": 0}
+    assert client.rows[0]["original_filename"] == "DSC00001.JPG"
+    assert proof.read_bytes() == b"proof bytes" and sha256(proof) == proof_hash
+    assert not final.exists()
+    assert not (cfg.projects[0].selected / "DSC00001.ARW").exists()
+    assert not snapshot_path.exists()
+    with engine.sessions() as s:
+        photo = s.scalar(select(Photo).where(Photo.photo_id == 1))
+        delivery = s.scalar(select(Delivery))
+        assert not photo.selected and not photo.cancelled and photo.delivery_hash is None
+        assert delivery.state == "WITHDRAWN"
+
+    # A new selection after removing the old delivery is correctly treated as
+    # an additional selection, while the Camera originals remain untouched.
+    client.rows[0]["color_label"] = "green"
+    await engine.sync()
+    with engine.sessions() as s:
+        photo = s.scalar(select(Photo).where(Photo.photo_id == 1))
+        assert photo.selected and photo.added_during_editing and not photo.delivery_hash
+    db.dispose()
+
+
 async def test_cancel_during_editing_keeps_first_delivery_in_progress(tmp_path):
     engine, client, cfg, db = setup(tmp_path)
     await engine.sync()

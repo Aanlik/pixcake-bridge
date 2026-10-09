@@ -97,9 +97,9 @@ def create_app(config=None, client=None, start_workers=True):
                     "追加选片": sum(x.selected and x.added_during_editing for x in photos),
                     "RAW已匹配": sum(bool(x.raw_path) for x in photos),
                     "待精修": sum(bool(x.selected_path) and not x.delivery_hash for x in photos),
-                    "已精修": len({x.photo_pk for x in deliveries}),
+                    "已精修": len({x.photo_pk for x in deliveries if x.state == "SUCCESS"}),
                     "已同步": sum(bool(x.delivery_hash) for x in photos),
-                    "返修": sum(x.state == "SUCCESS" for x in deliveries) - len({x.photo_pk for x in deliveries if x.state == "SUCCESS"}),
+                    "返修": max(0, sum(x.state == "SUCCESS" for x in deliveries) - len({x.photo_pk for x in deliveries if x.state == "SUCCESS"})),
                     "取消待确认": sum(x.cancelled and bool(x.selected_path) for x in photos),
                     "异常": sum(bool(x.error) for x in photos) + sum(x.state in {"FAILED", "UNKNOWN"} for x in deliveries),
                 }
@@ -232,6 +232,16 @@ def create_app(config=None, client=None, start_workers=True):
             raise HTTPException(400, str(exc))
         return {"success": True, "stage": payload["stage"]}
 
+    @app.post("/api/projects/{event_id}/restore", dependencies=[Depends(authorize)])
+    def restore_project_stage(request: Request, event_id: int):
+        if event_id not in {p.event_id for p in request.app.state.config.projects}:
+            raise HTTPException(404, "项目尚未绑定")
+        try:
+            stage = request.app.state.engine.restore_stage(event_id)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc))
+        return {"success": True, "stage": stage}
+
     @app.post("/api/projects/{event_id}/photos/{photo_id}/version-folder", dependencies=[Depends(authorize)])
     async def prepare_version_folder(request: Request, event_id: int, photo_id: int):
         if event_id not in {p.event_id for p in request.app.state.config.projects}:
@@ -246,6 +256,23 @@ def create_app(config=None, client=None, start_workers=True):
         except ValueError as exc:
             status = 409 if "版本已更新" in str(exc) else 400
             raise HTTPException(status, str(exc))
+
+    @app.post("/api/projects/{event_id}/photos/{photo_id}/withdraw", dependencies=[Depends(authorize)])
+    async def withdraw_photo(request: Request, event_id: int, photo_id: int):
+        if event_id not in {p.event_id for p in request.app.state.config.projects}:
+            raise HTTPException(404, "项目尚未绑定")
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        if not isinstance(payload.get("delete_delivered"), bool):
+            raise HTTPException(400, "必须明确选择是否删除已交付成片")
+        try:
+            return await request.app.state.engine.withdraw_photo(event_id, photo_id, payload["delete_delivered"])
+        except ValueError as exc:
+            raise HTTPException(409, str(exc))
+        except Exception as exc:
+            raise HTTPException(503, f"撤回未完成：{type(exc).__name__}")
 
     @app.post("/api/projects/{event_id}/sync", dependencies=[Depends(authorize)])
     async def sync_project(request: Request, event_id: int):
@@ -337,11 +364,14 @@ def create_app(config=None, client=None, start_workers=True):
             return setup_error("此项目的 PixCakeDelivery 挂载不可用，请检查 NAS Compose 路径")
 
         slug = re.sub(r"[^A-Za-z0-9_\-\u4e00-\u9fff]+", "-", name).strip("-")[:48] or "project"
-        project_root = delivery_root / f"event-{event_id}-{slug}"
+        # A project is already scoped to its own PixCakeDelivery mount. Put
+        # workflow folders directly in that mount; repeating the event name
+        # here created an unnecessary second project directory.
+        project_root = delivery_root
         try:
             resolved_delivery = delivery_root.resolve(strict=True)
             resolved_project = project_root.resolve(strict=False)
-            if project_root.is_symlink() or (resolved_delivery not in resolved_project.parents):
+            if project_root.is_symlink() or resolved_project != resolved_delivery:
                 raise ValueError("交付目录路径不能经过符号链接或越出交付根目录")
         except OSError as exc:
             return setup_error("无法读取 NAS 交付目录")

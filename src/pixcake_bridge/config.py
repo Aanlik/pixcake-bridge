@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
@@ -57,6 +58,71 @@ class Config:
         mount = self.project_delivery_mounts.get(int(event_id))
         return mount["host"] if mount else self.delivery_host_root
 
+    def migrate_legacy_delivery_layout(self):
+        """Move the old per-project child folders into their scoped mount.
+
+        Each mount already represents one project. The previous layout added
+        ``event-ID-name`` below it, so migrate only that exact legacy shape and
+        refuse to overwrite any non-empty destination.
+        """
+        changed = False
+        for project in self.projects:
+            root = self.delivery_root_for(project.event_id)
+            legacy = project.selected.parent
+            if legacy == root or legacy.is_symlink() or root.is_symlink():
+                continue
+            try:
+                is_legacy = (
+                    legacy.parent.resolve() == root.resolve() and
+                    legacy.name.startswith(f"event-{project.event_id}-")
+                )
+            except OSError:
+                is_legacy = False
+            if not is_legacy:
+                continue
+
+            names = ("03_SELECTED_RAW", "04_FINAL", "05_HISTORY")
+            moves = [(legacy / name, root / name) for name in names]
+            for source, destination in moves:
+                if source.is_symlink() or destination.is_symlink():
+                    raise ValueError("旧交付目录中存在符号链接，已停止自动整理")
+                if source.exists() and destination.exists():
+                    source_has_data = any(source.iterdir()) if source.is_dir() else True
+                    destination_has_data = any(destination.iterdir()) if destination.is_dir() else True
+                    if source_has_data and destination_has_data:
+                        raise ValueError(f"新旧交付目录均有文件，需先人工检查冲突：{name}")
+            for source, destination in moves:
+                if not source.exists():
+                    continue
+                if destination.exists():
+                    if not any(destination.iterdir()):
+                        destination.rmdir()
+                    else:
+                        source.rmdir()
+                        continue
+                source.rename(destination)
+            try:
+                legacy.rmdir()
+            except OSError:
+                pass
+            project.selected = root / "03_SELECTED_RAW"
+            project.final = root / "04_FINAL"
+            project.history = root / "05_HISTORY"
+            changed = True
+
+        if changed:
+            self.projects_file.parent.mkdir(parents=True, exist_ok=True)
+            payload = [
+                {"name": p.name, "event_id": p.event_id, "raw": str(p.raw),
+                 "selected": str(p.selected), "final": str(p.final), "history": str(p.history)}
+                for p in self.projects
+            ]
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=self.projects_file.parent, delete=False) as file:
+                json.dump(payload, file, ensure_ascii=False, indent=2)
+                file.write("\n")
+                temporary = Path(file.name)
+            temporary.replace(self.projects_file)
+
     @classmethod
     def load(cls):
         projects_file = Path(os.getenv("PROJECTS_FILE", "/config/projects.json"))
@@ -88,6 +154,7 @@ class Config:
             delivery_host_root=os.getenv("DELIVERY_HOST_ROOT", ""),
             project_delivery_mounts=mounts,
         )
+        cfg.migrate_legacy_delivery_layout()
         if not cfg.token.startswith("pp_live_") or len(cfg.admin_password) < 12:
             raise ValueError("请配置 Public API Token 和至少 12 位的 Bridge 管理密码")
         url = urlparse(cfg.base_url)
