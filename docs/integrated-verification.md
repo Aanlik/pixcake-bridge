@@ -1,6 +1,18 @@
 # 一体化镜像验证
 
-## 当前固定版：zh.14 / Bridge 0.1.4
+## 当前固定版：zh.16 / Bridge 0.1.4
+
+2026-10-09，linux/amd64，镜像 `picpeak-pixcake:3.134.1-zh.16-bridge.0.1.4`，镜像 ID `sha256:af602c683402ecb17328c24e3e854dc8bfcc61c9462cfdd7af32b719eb60cab0`。PicPeak 中文 Fork 提交 `8a1142bb79df04f0e922b3fb0ccaf37b10955f18`，Bridge 版本 0.1.4。
+
+- PicPeak 前端生产构建、类型检查、客户流程定向测试 5 项、后端选片和需求路由测试 9 项、i18n CI 检查全部通过；Bridge 测试 64 项全部通过。
+- 新增客户单张“选为精修 / 已选精修”与已交付照片“返修与新增需求”操作；多选时可批量标记精修。绿色工作流标记可在绑定 Bridge 后独立于通用反馈开关使用。
+- 返修和新增需求不依赖通用评论开关，不要求客户填写邮箱。
+- 一体化容器 smoke 验证通过：PicPeak 与 Bridge 同容器启动，Bridge 进程异常恢复，PicPeak/Bridge 数据卷重启保留；未配置 API Token 时初始化入口仍可用。
+- NAS 导入包：`releases/picpeak-pixcake-amd64-3.134.1-zh.16-bridge.0.1.4.tar`，SHA-256：`f1a763aa83f3e659cbad308cae1987e3d1a1a97ec02dd0556751d3385e4ee1bf`，246 MiB。
+
+这只是本地构建和隔离容器验证，本轮尚未导入用户 NAS，也未在真实客户分享页或手机/微信浏览器验收。实际 NAS 更新时保留原有 PicPeak 与 Bridge 数据卷、Camera 只读挂载、交付目录和 `.env`；导入镜像后更新 Compose 固定标签，再检查 Bridge 已连接并在测试项目中验证按钮和状态。
+
+## zh.14 历史验证
 
 2026-10-09，linux/amd64，镜像 `picpeak-pixcake:3.134.1-zh.14-bridge.0.1.4`。PicPeak 中文 Fork 提交 `3a4beae15025dc030db8074b50994f83fed4adcd`，Bridge 提交 `c5d8b2a4f3df14fff85b57d5ba190e298e211154`。
 
