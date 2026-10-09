@@ -1,6 +1,17 @@
 # 一体化镜像验证
 
-## 当前固定版：zh.16 / Bridge 0.1.4
+## 当前固定版：zh.17 / Bridge 0.1.4
+
+2026-10-09，linux/amd64，镜像 `picpeak-pixcake:3.134.1-zh.17-bridge.0.1.4`，PicPeak 中文 Fork 提交 `6a5494e0b3759e408f2a8ffb3bbe6603f1dcfd9c`，Bridge 版本 0.1.4。
+
+- PicPeak AIO 本地镜像编译、双服务启动、Bridge 进程恢复、整容器重启、状态卷保留及无 API Token 初始化检查通过。
+- 中文完整性检查通过：4812 个键、190 个复数键；386 个文件中的 4632 个静态翻译引用检查通过。补齐了导致上一轮远端中文校验失败的 6 个简体中文复数键。
+- GitHub PicPeak AIO 编译和启动检查通过；上游完整前端测试仍报告 5 项失败（760 通过），涉及 no-email 发布提示、NAS 关联错误断言、产品用量目录数量、主题颜色检查和提醒页返回链接，与本次 locale 修复无关。详情见 [PicPeak 验证记录](https://github.com/Aanlik/picpeak-zh/actions/runs/37930587165)。
+- NAS 导入包：`releases/picpeak-pixcake-amd64-3.134.1-zh.17-bridge.0.1.4.tar`，SHA-256：`1d062d8c101f1cf23889419a12b105624004a32da3e7d051a1ab35e3ec4683ac`，246 MiB。
+
+本地构建和隔离容器验证不等同于 NAS 安装或真实客户浏览器验收。更新时保留原有 PicPeak 与 Bridge 数据卷、Camera 只读挂载、交付目录和 `.env`；导入镜像后使用此处固定标签更新 Compose，再用测试项目检查选片按钮和状态。
+
+## zh.16 历史验证
 
 2026-10-09，linux/amd64，镜像 `picpeak-pixcake:3.134.1-zh.16-bridge.0.1.4`，镜像 ID `sha256:af602c683402ecb17328c24e3e854dc8bfcc61c9462cfdd7af32b719eb60cab0`。PicPeak 中文 Fork 提交 `8a1142bb79df04f0e922b3fb0ccaf37b10955f18`，Bridge 版本 0.1.4。
 
