@@ -27,19 +27,26 @@ def safe_file(path: Path, root: Path):
     return path
 
 
-def index_files(root: Path, extensions: set[str]):
+def index_files(root: Path, extensions: set[str], exclude_dirs: set[str] | None = None):
     result: dict[str, list[Path]] = {}
+    excluded = {name.casefold() for name in (exclude_dirs or set())}
     for p in root.rglob("*"):
+        relative = p.relative_to(root)
+        if any(part.casefold() in excluded for part in relative.parts[:-1]):
+            continue
         if p.suffix.lower() in extensions and p.is_file():
             safe_file(p, root)
             result.setdefault(stem_key(p.name), []).append(p)
     return result
 
 
-def match_raw(source: str, index: dict[str, list[Path]]):
+def match_raw(source: str, index: dict[str, list[Path]], root: Path | None = None):
     candidates = index.get(stem_key(source), [])
     if len(candidates) != 1:
-        raise ValueError("RAW 未找到" if not candidates else "RAW 文件名冲突，请先消除同 stem 多文件")
+        if not candidates:
+            raise ValueError("RAW 未找到")
+        locations = [str(p.relative_to(root)) if root else p.name for p in candidates]
+        raise ValueError(f"RAW 文件名冲突（{Path(source).stem}）：" + "、".join(locations))
     return candidates[0]
 
 

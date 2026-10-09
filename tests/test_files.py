@@ -23,6 +23,22 @@ def test_conflict_and_missing(tmp_path):
         match_raw("b.jpg", index_files(tmp_path, RAW_EXTENSIONS))
 
 
+def test_delivery_subtree_is_not_an_original_and_collision_lists_both_paths(tmp_path):
+    (tmp_path / "DSC001.ARW").write_bytes(b"camera raw")
+    nested = tmp_path / "PixCakeDelivery" / "event-7" / "03_SELECTED_RAW" / "DSC001.ARW"
+    nested.parent.mkdir(parents=True)
+    nested.write_bytes(b"selected copy")
+
+    index = index_files(tmp_path, RAW_EXTENSIONS, {"PixCakeDelivery"})
+    assert match_raw("DSC001.JPG", index, tmp_path) == tmp_path / "DSC001.ARW"
+
+    second = tmp_path / "Subfolder" / "DSC001.NEF"
+    second.parent.mkdir()
+    second.write_bytes(b"second original")
+    with pytest.raises(ValueError, match=r"DSC001.*DSC001\.ARW.*Subfolder/DSC001\.NEF"):
+        match_raw("DSC001.JPG", index_files(tmp_path, RAW_EXTENSIONS, {"PixCakeDelivery"}), tmp_path)
+
+
 @pytest.mark.parametrize("name", ["../x.jpg", "a/b.jpg", "a\\b.jpg", "a\0.jpg", ".", "..", "C:x.jpg", "a\n.jpg", "x" * 241])
 def test_illegal_name(name):
     with pytest.raises(ValueError):

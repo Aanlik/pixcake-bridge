@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from urllib.parse import unquote_plus
 
 from pixcake_bridge.app import create_app
 from pixcake_bridge.models import Delivery, Photo, Project
@@ -112,4 +113,55 @@ def test_prepare_version_folder_and_reject_stale_version(tmp_path):
         assert prepared.json() == {"version": 1, "folder": str(cfg.projects[0].final / "V1")}
         stale = client.post("/api/projects/7/photos/1/version-folder", json={"expected_current_version": 1})
         assert stale.status_code == 409
+    db.dispose()
+
+
+def test_auto_mount_creates_workspace_only_in_project_scoped_delivery_mount(tmp_path):
+    engine, remote, cfg, db = setup(tmp_path)
+    cfg.raw_host_root = tmp_path / "nas" / "Camera"
+    cfg.raw_root = tmp_path / "camera"
+    raw_job = cfg.raw_root / "2026-10-04"
+    raw_job.mkdir(parents=True)
+    cfg.delivery_root = tmp_path / "delivery"
+    cfg.delivery_root.mkdir()
+    scoped_host = cfg.raw_host_root / "2026-10-04" / "PixCakeDelivery"
+    scoped_container = tmp_path / "delivery-event-9"
+    scoped_host.mkdir(parents=True)
+    scoped_container.mkdir()
+    cfg.delivery_host_root = str(tmp_path / "nas" / "Camera" / "2026-10-04" / "PixCakeDelivery")
+    cfg.project_delivery_mounts = {
+        9: {"container": str(scoped_container), "host": str(scoped_host)},
+    }
+    cfg.projects_file = tmp_path / "projects.json"
+    db.dispose()
+
+    with TestClient(create_app(cfg, remote, start_workers=False)) as client:
+        client.auth = ("admin", cfg.admin_password)
+        assert client.get("/api/projects/9/mount-status?raw_subdir=2026-10-04").json() == {"writable_mount_ready": True}
+        response = client.post("/projects", data={
+            "name": "2026-10-04",
+            "event_id": "9",
+            "raw_subdir": "2026-10-04",
+            "auto_mount": "true",
+        }, follow_redirects=False)
+        assert response.status_code == 303
+        created = next(project for project in cfg.projects if project.event_id == 9)
+        assert created.raw == raw_job
+        assert created.selected == scoped_container / "event-9-2026-10-04" / "03_SELECTED_RAW"
+        assert created.selected.is_dir() and created.final.is_dir() and created.history.is_dir()
+
+        cfg.project_delivery_mounts[10] = {
+            "container": str(scoped_container),
+            "host": str(tmp_path / "nas" / "PixCakeDelivery"),
+        }
+        assert client.get("/api/projects/10/mount-status?raw_subdir=2026-10-04").json() == {"writable_mount_ready": False}
+        response = client.post("/projects", data={
+            "name": "权限范围不匹配",
+            "event_id": "10",
+            "raw_subdir": "2026-10-04",
+            "auto_mount": "true",
+        }, follow_redirects=False)
+        assert response.status_code == 303
+        assert not any(project.event_id == 10 for project in cfg.projects)
+        assert "PixCakeDelivery 文件夹单独挂载" in unquote_plus(response.headers["location"])
     db.dispose()

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import re
 import secrets
 import tempfile
@@ -24,6 +25,18 @@ templates = Environment(loader=FileSystemLoader(Path(__file__).parent / "templat
 STAGE_NAMES = {"SELECTING": "客户选片", "EDITING": "精修中", "DELIVERED": "已交付", "ARCHIVED": "已归档"}
 
 
+def host_project_path(host_root, container_root, project_root):
+    if not host_root:
+        return None
+    try:
+        relative = Path(project_root).relative_to(Path(container_root))
+    except ValueError:
+        # Keep compatibility with manually configured legacy projects whose
+        # work directory predates the dedicated delivery mount.
+        relative = Path(project_root).name
+    return Path(host_root) / relative
+
+
 def create_app(config=None, client=None, start_workers=True):
     @asynccontextmanager
     async def lifespan(app):
@@ -34,9 +47,16 @@ def create_app(config=None, client=None, start_workers=True):
         app.state.engine, app.state.config = engine, cfg
         tasks = []
         async def watch():
-            # Watch the delivery root recursively so projects added through
-            # the dashboard are observed without restarting the container.
-            roots = [cfg.delivery_root] if cfg.delivery_root.is_dir() else [p.final for p in cfg.projects]
+            # Watch every mounted delivery root. A project-specific bind can
+            # live outside the default /delivery mount, and must be observed
+            # without making the Camera tree writable.
+            roots = list(dict.fromkeys(
+                cfg.delivery_root_for(event_id)
+                for event_id in ({p.event_id for p in cfg.projects} | set(cfg.project_delivery_mounts))
+                if cfg.delivery_root_for(event_id).is_dir()
+            ))
+            if not roots and cfg.delivery_root.is_dir():
+                roots = [cfg.delivery_root]
             if roots:
                 async for _ in awatch(*roots, debounce=500):
                     engine.wake.set()
@@ -84,7 +104,14 @@ def create_app(config=None, client=None, start_workers=True):
                     "异常": sum(bool(x.error) for x in photos) + sum(x.state in {"FAILED", "UNKNOWN"} for x in deliveries),
                 }
                 project_config = next((c for c in engine.config.projects if c.event_id == p.event_id), None)
-                projects.append({"project": p, "config": project_config, "photos": photos, "deliveries": deliveries, "summary": summary,
+                host_root = engine.config.delivery_host_root_for(p.event_id)
+                delivery_path = None
+                if project_config and host_root:
+                    mount_root = engine.config.delivery_root_for(p.event_id)
+                    delivery_path = str(host_project_path(host_root, mount_root, project_config.selected.parent))
+                projects.append({"project": p, "config": project_config,
+                    "delivery_host_root": host_root, "delivery_host_path": delivery_path,
+                    "photos": photos, "deliveries": deliveries, "summary": summary,
                     "errors": list(s.scalars(select(Error).where(Error.project_id == p.id, Error.resolved == False).order_by(Error.created.desc()).limit(30))),
                     "runs": list(s.scalars(select(SyncRun).where(SyncRun.project_id == p.id).order_by(SyncRun.id.desc()).limit(5)))})
             return projects
@@ -98,7 +125,7 @@ def create_app(config=None, client=None, start_workers=True):
         cfg = request.app.state.config
         return templates.get_template("dashboard.html").render(
             projects=view(request.app.state.engine), stages=STAGES, stage_names=STAGE_NAMES,
-            project_setup_ready=cfg.raw_root.is_dir() and cfg.delivery_root.is_dir(),
+            project_setup_ready=cfg.raw_root.is_dir() and (any(cfg.delivery_root_for(eid).is_dir() for eid in {p.event_id for p in cfg.projects}) if cfg.projects else cfg.delivery_root.is_dir()),
             delivery_host_root=cfg.delivery_host_root,
             setup_error=request.query_params.get("setup_error", ""),
         )
@@ -106,6 +133,31 @@ def create_app(config=None, client=None, start_workers=True):
     @app.get("/api/projects", dependencies=[Depends(authorize)])
     def projects(request: Request):
         return [{"event_id": x["project"].event_id, "name": x["project"].name, "stage": x["project"].stage, "connected": x["project"].connected, "summary": x["summary"]} for x in view(request.app.state.engine)]
+
+    @app.get("/api/projects/{event_id}/mount-status", dependencies=[Depends(authorize)])
+    def project_mount_status(request: Request, event_id: int):
+        cfg = request.app.state.config
+        raw_subdir = request.query_params.get("raw_subdir", "").strip()
+        relative = Path(raw_subdir)
+        ready = False
+        if (cfg.raw_host_root and raw_subdir and not relative.is_absolute()
+                and relative.parts and ".." not in relative.parts):
+            raw_path = cfg.raw_root / relative
+            expected_host = cfg.raw_host_root / relative / "PixCakeDelivery"
+            actual_host = cfg.delivery_host_root_for(event_id)
+            no_symlink_components = not any(
+                (cfg.raw_root / Path(*relative.parts[:index])).is_symlink()
+                for index in range(1, len(relative.parts) + 1)
+            )
+            ready = (
+                raw_path.is_dir()
+                and not raw_path.is_symlink()
+                and no_symlink_components
+                and cfg.delivery_root_for(event_id).is_dir()
+                and bool(actual_host)
+                and os.path.normpath(str(expected_host)) == os.path.normpath(str(actual_host))
+            )
+        return {"writable_mount_ready": ready}
 
     # PicPeak's authenticated server-side proxy uses these endpoints to render
     # the photographer workflow in the PicPeak admin UI. They are protected by
@@ -127,6 +179,8 @@ def create_app(config=None, client=None, start_workers=True):
             for delivery in deliveries:
                 versions_by_photo[delivery.photo_pk] = versions_by_photo.get(delivery.photo_pk, 0) + 1
         project_cfg = next((item for item in engine.config.projects if item.event_id == event_id), None)
+        delivery_host_root = engine.config.delivery_host_root_for(event_id)
+        delivery_container_root = engine.config.delivery_root_for(event_id)
         photos = []
         for photo in entry["photos"]:
             version = versions_by_photo.get(photo.id, 0)
@@ -144,8 +198,8 @@ def create_app(config=None, client=None, start_workers=True):
                 "current_version": version,
                 "next_version": version + 1,
                 "next_version_folder": str(
-                    (Path(engine.config.delivery_host_root) / project_cfg.selected.parent.name / "04_FINAL" / f"V{version + 1}")
-                    if engine.config.delivery_host_root
+                    (host_project_path(delivery_host_root, delivery_container_root, project_cfg.selected.parent) / "04_FINAL" / f"V{version + 1}")
+                    if delivery_host_root
                     else project_cfg.final / f"V{version + 1}"
                 ),
                 "delivered": version > 0,
@@ -156,8 +210,8 @@ def create_app(config=None, client=None, start_workers=True):
         project = entry["project"]
         project_root = next((cfg.selected.parent for cfg in engine.config.projects if cfg.event_id == event_id), None)
         delivery_path = None
-        if project_root is not None and engine.config.delivery_host_root:
-            delivery_path = str(Path(engine.config.delivery_host_root) / project_root.name)
+        if project_root is not None and delivery_host_root:
+            delivery_path = str(host_project_path(delivery_host_root, delivery_container_root, project_root))
         return {
             "event_id": project.event_id,
             "name": project.name,
@@ -237,6 +291,7 @@ def create_app(config=None, client=None, start_workers=True):
         name: str = Form(...),
         event_id: int = Form(...),
         raw_subdir: str = Form(...),
+        auto_mount: bool = Form(False),
     ):
         cfg = request.app.state.config
         engine = request.app.state.engine
@@ -268,10 +323,23 @@ def create_app(config=None, client=None, start_workers=True):
         except (OSError, ValueError) as exc:
             return setup_error(str(exc))
 
+        delivery_root = cfg.delivery_root_for(event_id)
+        delivery_host_root = cfg.delivery_host_root_for(event_id)
+        if cfg.raw_host_root or auto_mount:
+            # New deployments use only project-scoped delivery mounts. The
+            # Camera tree itself remains read-only; reject any mount that
+            # points outside this project's PixCakeDelivery directory.
+            expected_mount = Path(cfg.raw_host_root) / relative / "PixCakeDelivery" if cfg.raw_host_root else None
+            actual_mount = Path(delivery_host_root) if delivery_host_root else None
+            if not expected_mount or not actual_mount or os.path.normpath(str(expected_mount)) != os.path.normpath(str(actual_mount)):
+                return setup_error("请先在 NAS Compose 中把此项目的 PixCakeDelivery 文件夹单独挂载为 Bridge 可写目录；Camera/RAW 挂载保持只读")
+        if not delivery_root.is_dir() or delivery_root.is_symlink():
+            return setup_error("此项目的 PixCakeDelivery 挂载不可用，请检查 NAS Compose 路径")
+
         slug = re.sub(r"[^A-Za-z0-9_\-\u4e00-\u9fff]+", "-", name).strip("-")[:48] or "project"
-        project_root = cfg.delivery_root / f"event-{event_id}-{slug}"
+        project_root = delivery_root / f"event-{event_id}-{slug}"
         try:
-            resolved_delivery = cfg.delivery_root.resolve(strict=True)
+            resolved_delivery = delivery_root.resolve(strict=True)
             resolved_project = project_root.resolve(strict=False)
             if project_root.is_symlink() or (resolved_delivery not in resolved_project.parents):
                 raise ValueError("交付目录路径不能经过符号链接或越出交付根目录")

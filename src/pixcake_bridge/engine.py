@@ -114,7 +114,10 @@ class Engine:
                         # filesystem change so an API failure cannot delete RAW.
                         remote = await self.client.photos(cfg.event_id)
                         project.connected = True
-                        raw_index = await asyncio.to_thread(index_files, cfg.raw, RAW_EXTENSIONS)
+                        # PixCakeDelivery lives inside the referenced shoot
+                        # folder, but contains selected RAW copies and final
+                        # JPEGs. Never index those as camera originals.
+                        raw_index = await asyncio.to_thread(index_files, cfg.raw, RAW_EXTENSIONS, {"PixCakeDelivery"})
                         counts = Counter(stem_key(p["source_filename"]) for p in remote if p.get("source_filename"))
                         for item in remote:
                             photo = s.scalar(select(Photo).where(Photo.project_id == project.id, Photo.photo_id == item["id"]))
@@ -170,7 +173,7 @@ class Engine:
 
     async def selection(self, cfg, project, photo, raw_index):
         if photo.selected:
-            raw = match_raw(photo.source_filename, raw_index)
+            raw = match_raw(photo.source_filename, raw_index, cfg.raw)
             digest = await asyncio.to_thread(sha256, raw)
             if photo.raw_hash and photo.raw_hash != digest:
                 raise ValueError("原始 RAW SHA256 变化，停止处理")

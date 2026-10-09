@@ -44,13 +44,32 @@ class Config:
     projects: list[ProjectConfig] = field(default_factory=list)
     projects_file: Path = Path("/config/projects.json")
     raw_root: Path = Path("/external-media/Camera")
+    raw_host_root: Path | None = None
     delivery_root: Path = Path("/delivery")
     delivery_host_root: str = ""
+    project_delivery_mounts: dict[int, dict[str, str]] = field(default_factory=dict)
+
+    def delivery_root_for(self, event_id: int) -> Path:
+        mount = self.project_delivery_mounts.get(int(event_id))
+        return Path(mount["container"]) if mount else self.delivery_root
+
+    def delivery_host_root_for(self, event_id: int) -> str:
+        mount = self.project_delivery_mounts.get(int(event_id))
+        return mount["host"] if mount else self.delivery_host_root
 
     @classmethod
     def load(cls):
         projects_file = Path(os.getenv("PROJECTS_FILE", "/config/projects.json"))
         projects = json.loads(projects_file.read_text())
+        raw_mounts = json.loads(os.getenv("PROJECT_DELIVERY_MOUNTS", "{}"))
+        mounts = {}
+        for key, mount in raw_mounts.items():
+            event_id = int(key)
+            container = str(mount.get("container", ""))
+            host = str(mount.get("host", ""))
+            if event_id < 1 or not Path(container).is_absolute() or not Path(host).is_absolute():
+                raise ValueError("项目交付挂载必须使用正数项目编号和绝对路径")
+            mounts[event_id] = {"container": container, "host": host}
         cfg = cls(
             base_url=os.getenv("PICPEAK_URL", "http://picpeak:3000").rstrip("/"),
             token=os.getenv("PICPEAK_TOKEN", ""),
@@ -64,8 +83,10 @@ class Config:
             projects=[ProjectConfig(**{**p, **{k: Path(p[k]) for k in ("raw", "selected", "final", "history")}}) for p in projects],
             projects_file=projects_file,
             raw_root=Path(os.getenv("RAW_ROOT", "/external-media/Camera")),
+            raw_host_root=Path(os.getenv("RAW_HOST_ROOT")) if os.getenv("RAW_HOST_ROOT") else None,
             delivery_root=Path(os.getenv("DELIVERY_ROOT", "/delivery")),
             delivery_host_root=os.getenv("DELIVERY_HOST_ROOT", ""),
+            project_delivery_mounts=mounts,
         )
         if not cfg.token.startswith("pp_live_") or len(cfg.admin_password) < 12:
             raise ValueError("请配置 Public API Token 和至少 12 位的 Bridge 管理密码")
