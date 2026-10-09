@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-image=${STACK_IMAGE:-picpeak-pixcake:3.134.1-zh.19-bridge.0.1.7}
+image=${STACK_IMAGE:-picpeak-pixcake:3.134.1-zh.20-bridge.0.1.8}
 name=picpeak-integrated-smoke
 cleanup() { docker rm -fv "$name" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
