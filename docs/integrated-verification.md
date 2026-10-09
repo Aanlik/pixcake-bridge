@@ -1,5 +1,18 @@
 # 一体化镜像验证
 
+## 当前固定版
+
+2026-10-09，linux/amd64，镜像 `picpeak-pixcake:3.134.1-zh.10-bridge.0.1.2`，基于 PicPeak 中文 Fork 提交 `8f05c86b6ce81b57ac5eed2aa14cca542303c766`，Bridge 0.1.2。GitHub Actions [构建与容器验证](https://github.com/Aanlik/pixcake-bridge/actions/runs/37887261907)已通过。
+
+- PicPeak AIO 与集成镜像构建成功。
+- 双服务健康检查、Python 3.12、PicPeak/Bridge 数据库创建、Bridge 进程异常恢复、整容器重启和状态卷保留检查成功。
+- 未配置 API Token 时 PicPeak 初始化和健康检查正常。
+- 手动发布任务导出了 NAS 导入 tar，并保留 7 天。文件 SHA-256：`548b01defdeb6e6fe9d39c8605ac33bd9a1bc7f2515e1146732c4177ad2425dd`。
+
+以上是隔离 CI 容器验证；当前 fnOS 实例的镜像更新仍需导入该 tar 并更新 Compose 项目，不能据此宣称 NAS 已完成迁移。
+
+## zh.9 历史验证
+
 2026-10-09，linux/amd64，本地验证 PicPeak 中文 Fork 提交 `ebe9b52fb3c56c39ee9816706892b055da3c87d1`，Bridge 0.1.1。
 
 镜像 `picpeak-pixcake:3.134.1-zh.9-bridge.0.1.2` 基于 PicPeak 中文 Fork 提交 `ebe9b52fb3c56c39ee9816706892b055da3c87d1`；Bridge 使用 Python 3.12。Supervisor 分别启动 PicPeak 和 Bridge，应用进程以 UID/GID 1001 运行，监督进程为 root。

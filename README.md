@@ -73,6 +73,8 @@ docker save -o picpeak-pixcake-amd64.tar picpeak-pixcake:3.134.1-zh.10-bridge.0.
 
 在 NAS 容器管理界面导入 tar 并创建 Compose 项目；普通 Docker 主机可执行 `docker load -i picpeak-pixcake-amd64.tar`。此导入操作不需要重新构建镜像。
 
+NAS 无法直接访问镜像仓库时，可运行 GitHub Actions 的 `Integrated image` 工作流并选择发布；成功后会附带 7 天有效的 NAS 导入 tar。导入后在 Compose 配置中使用对应固定版本标签，不要删除 PicPeak 或 Bridge 数据卷。
+
 ### 3. 首次初始化
 
 复制 `.env.example` 为 `.env`，设置 `LAN_BIND_IP` 为 NAS 内网 IP、`PHOTO_PROJECT` 为项目绝对路径、`PROJECT_FOLDER` 为目录名称、`BRIDGE_ADMIN_PASSWORD` 为至少 12 位随机密码。初次保留 `BRIDGE_ENABLED=false`、`PICPEAK_TOKEN` 为空。
