@@ -1,11 +1,11 @@
 # 一体化镜像验证
 
-2026-10-08，linux/amd64，PicPeak 中文代码提交 7a38c5ce，Bridge 0.1.1。
+2026-10-09，linux/amd64，本地验证 PicPeak 中文 Fork 提交 `ebe9b52fb3c56c39ee9816706892b055da3c87d1`，Bridge 0.1.1。
 
-镜像 `picpeak-pixcake:3.134.1-zh.6-bridge.0.1.1` 已实际构建；Bridge 使用 Python 3.12。Supervisor 分别启动 PicPeak 和 Bridge，应用进程以 UID/GID 1001 运行，监督进程为 root。
+镜像 `picpeak-pixcake:3.134.1-zh.9-bridge.0.1.2` 基于 PicPeak 中文 Fork 提交 `ebe9b52fb3c56c39ee9816706892b055da3c87d1`；Bridge 使用 Python 3.12。Supervisor 分别启动 PicPeak 和 Bridge，应用进程以 UID/GID 1001 运行，监督进程为 root。
 
 已通过：
-- Bridge 59 项单元与接口测试，包括新增一体化端口、只读挂载检查。
+- Bridge 60 项单元与接口测试，包括新增一体化端口、只读挂载检查。
 - Compose 解析和部署预检：固定镜像、8080 仅内网、RAW/PROOF 只读。
 - 真实一体化容器双服务健康检查、分别创建 PicPeak 与 Bridge 数据库。
 - 杀死 Bridge 进程后自动恢复，两个服务重新通过健康检查。
