@@ -83,7 +83,8 @@ def create_app(config=None, client=None, start_workers=True):
                     "取消待确认": sum(x.cancelled and bool(x.selected_path) for x in photos),
                     "异常": sum(bool(x.error) for x in photos) + sum(x.state in {"FAILED", "UNKNOWN"} for x in deliveries),
                 }
-                projects.append({"project": p, "photos": photos, "deliveries": deliveries, "summary": summary,
+                project_config = next((c for c in engine.config.projects if c.event_id == p.event_id), None)
+                projects.append({"project": p, "config": project_config, "photos": photos, "deliveries": deliveries, "summary": summary,
                     "errors": list(s.scalars(select(Error).where(Error.project_id == p.id, Error.resolved == False).order_by(Error.created.desc()).limit(30))),
                     "runs": list(s.scalars(select(SyncRun).where(SyncRun.project_id == p.id).order_by(SyncRun.id.desc()).limit(5)))})
             return projects
@@ -105,6 +106,107 @@ def create_app(config=None, client=None, start_workers=True):
     @app.get("/api/projects", dependencies=[Depends(authorize)])
     def projects(request: Request):
         return [{"event_id": x["project"].event_id, "name": x["project"].name, "stage": x["project"].stage, "connected": x["project"].connected, "summary": x["summary"]} for x in view(request.app.state.engine)]
+
+    # PicPeak's authenticated server-side proxy uses these endpoints to render
+    # the photographer workflow in the PicPeak admin UI. They are protected by
+    # the same Bridge credentials as its standalone dashboard; no Bridge
+    # credential is ever sent to a customer browser.
+    @app.get("/api/projects/{event_id}/detail", dependencies=[Depends(authorize)])
+    def project_detail(request: Request, event_id: int):
+        engine = request.app.state.engine
+        if event_id not in {p.event_id for p in engine.config.projects}:
+            raise HTTPException(404, "项目尚未绑定")
+        entry = next((item for item in view(engine) if item["project"].event_id == event_id), None)
+        if entry is None:
+            raise HTTPException(404, "项目不存在")
+        versions_by_photo = {}
+        with engine.sessions() as session:
+            deliveries = list(session.scalars(
+                select(Delivery).join(Photo).where(Photo.project_id == entry["project"].id, Delivery.state == "SUCCESS")
+            ))
+            for delivery in deliveries:
+                versions_by_photo[delivery.photo_pk] = versions_by_photo.get(delivery.photo_pk, 0) + 1
+        photos = []
+        for photo in entry["photos"]:
+            version = versions_by_photo.get(photo.id, 0)
+            photo_deliveries = [delivery for delivery in entry["deliveries"] if delivery.photo_pk == photo.id]
+            latest_delivery = max(photo_deliveries, key=lambda delivery: delivery.updated, default=None)
+            photos.append({
+                "photo_id": photo.photo_id,
+                "source_filename": photo.source_filename,
+                "selected": bool(photo.selected),
+                "added_during_editing": bool(photo.added_during_editing),
+                "cancelled": bool(photo.cancelled),
+                "raw_matched": bool(photo.raw_path),
+                "ready_for_editing": bool(photo.selected_path),
+                "current_version": version,
+                "delivered": version > 0,
+                "error": bool(photo.error),
+                "error_message": photo.error or (latest_delivery.error if latest_delivery else None),
+                "delivery_state": latest_delivery.state if latest_delivery else None,
+            })
+        project = entry["project"]
+        project_root = next((cfg.selected.parent for cfg in engine.config.projects if cfg.event_id == event_id), None)
+        delivery_path = None
+        if project_root is not None and engine.config.delivery_host_root:
+            delivery_path = str(Path(engine.config.delivery_host_root) / project_root.name)
+        return {
+            "event_id": project.event_id,
+            "name": project.name,
+            "stage": project.stage,
+            "connected": bool(project.connected),
+            "delivery_path": delivery_path,
+            "summary": entry["summary"],
+            "photos": photos,
+            "errors": [{"message": error.message, "created_at": error.created.isoformat() if error.created else None} for error in entry["errors"]],
+        }
+
+    @app.post("/api/projects/{event_id}/stage", dependencies=[Depends(authorize)])
+    async def update_project_stage(request: Request, event_id: int):
+        payload = await request.json()
+        try:
+            request.app.state.engine.set_stage(event_id, payload.get("stage", ""))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        return {"success": True, "stage": payload["stage"]}
+
+    @app.post("/api/projects/{event_id}/sync", dependencies=[Depends(authorize)])
+    async def sync_project(request: Request, event_id: int):
+        if event_id not in {p.event_id for p in request.app.state.config.projects}:
+            raise HTTPException(404, "项目不存在")
+        await request.app.state.engine.sync(event_id)
+        return {"success": True}
+
+    @app.post("/api/projects/{event_id}/rescan", dependencies=[Depends(authorize)])
+    async def rescan_project(request: Request, event_id: int):
+        if event_id not in {p.event_id for p in request.app.state.config.projects}:
+            raise HTTPException(404, "项目不存在")
+        await request.app.state.engine.sync(event_id)
+        return {"success": True}
+
+    @app.post("/api/projects/{event_id}/retry", dependencies=[Depends(authorize)])
+    async def retry_project(request: Request, event_id: int):
+        engine = request.app.state.engine
+        if event_id not in {p.event_id for p in engine.config.projects}:
+            raise HTTPException(404, "项目不存在")
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        with engine.sessions() as session:
+            project = session.scalar(select(Project).where(Project.event_id == event_id))
+            unknown = list(session.scalars(
+                select(Delivery).join(Photo).where(Photo.project_id == project.id, Delivery.state == "UNKNOWN")
+            ))
+        if unknown and payload.get("confirm_unknown") is not True:
+            raise HTTPException(409, detail={
+                "error": "PicPeak 中核对这些照片的结果后，才能重试未知任务",
+                "code": "UNKNOWN_CONFIRMATION_REQUIRED",
+                "count": len(unknown),
+            })
+        engine.retry(event_id)
+        await engine.sync(event_id)
+        return {"success": True}
 
     @app.post("/projects", dependencies=[Depends(authorize)])
     async def add_project(

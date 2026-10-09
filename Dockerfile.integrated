@@ -1,8 +1,8 @@
 # Build PicPeak separately from its own checkout; combine fixed versions here.
-ARG PICPEAK_BASE=picpeak-zh:3.134.1-zh.12
+ARG PICPEAK_BASE=picpeak-zh:3.134.1-zh.14
 FROM python:3.12.14-alpine AS bridge-python
 FROM ${PICPEAK_BASE}
-ARG STACK_VERSION=3.134.1-zh.12-bridge.0.1.2
+ARG STACK_VERSION=3.134.1-zh.14-bridge.0.1.4
 LABEL org.opencontainers.image.title="PicPeak 简体中文 + PixCake Bridge" \
       org.opencontainers.image.source="https://github.com/Aanlik/pixcake-bridge" \
       org.opencontainers.image.version=${STACK_VERSION}
@@ -22,7 +22,7 @@ ENV PICPEAK_URL=http://127.0.0.1:3000 \
     BRIDGE_ENABLED=false \
     PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 VOLUME ["/bridge-data"]
-EXPOSE 3000 8080
+EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=8s --start-period=120s --retries=3 CMD /opt/bridge/venv/bin/python /opt/integrated/health.py
 ENTRYPOINT ["dumb-init", "--", "/opt/integrated/start.sh"]
 CMD []
