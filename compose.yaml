@@ -1,23 +1,24 @@
 name: pixcake
 services:
   picpeak:
-    image: ${STACK_IMAGE:-picpeak-pixcake:3.134.1-zh.11-bridge.0.1.2}
+    image: ${STACK_IMAGE:-picpeak-pixcake:3.134.1-zh.12-bridge.0.1.2}
     build:
       context: .
       dockerfile: Dockerfile.integrated
       args:
-        PICPEAK_BASE: ${PICPEAK_BASE:-picpeak-zh:3.134.1-zh.11}
+        PICPEAK_BASE: ${PICPEAK_BASE:-picpeak-zh:3.134.1-zh.12}
     # Copy only configuration into the service volume to support NAS owner-only bind permissions.
     entrypoint:
     - dumb-init
     - --
     - /bin/sh
     - -ec
-    - cp /config/projects.json /bridge-data/projects.json; chown 1001:1001 /bridge-data/projects.json; chmod 640 /bridge-data/projects.json; exec /opt/integrated/start.sh
+    - '[ -e /bridge-data/projects.json ] || cp /config/projects.json /bridge-data/projects.json; chown ${BRIDGE_UID:-1001}:${BRIDGE_GID:-1001} /bridge-data/projects.json; chmod 640 /bridge-data/projects.json; exec /opt/integrated/start.sh'
     environment:
       PORT: '3000'
       NO_EMAIL_MODE: 'true'
       PIXCAKE_BRIDGE_URL: http://127.0.0.1:8080
+      PIXCAKE_BRIDGE_PUBLIC_URL: http://${LAN_BIND_IP:-127.0.0.1}:${BRIDGE_PORT:-8080}
       PIXCAKE_BRIDGE_PASSWORD: ${BRIDGE_ADMIN_PASSWORD:?填写管理密码}
       DATABASE_CLIENT: sqlite3
       EXTERNAL_MEDIA_ROOT: /external-media
@@ -27,8 +28,13 @@ services:
       PICPEAK_URL: http://127.0.0.1:3000
       PICPEAK_TOKEN: ${PICPEAK_TOKEN:-}
       BRIDGE_ADMIN_PASSWORD: ${BRIDGE_ADMIN_PASSWORD:?填写管理密码}
+      BRIDGE_UID: ${BRIDGE_UID:-1001}
+      BRIDGE_GID: ${BRIDGE_GID:-1001}
       DATABASE_URL: sqlite:////bridge-data/bridge.db
       PROJECTS_FILE: /bridge-data/projects.json
+      RAW_ROOT: /external-media/Camera
+      DELIVERY_ROOT: /delivery
+      DELIVERY_HOST_ROOT: ${NAS_DELIVERY_ROOT:-}
       POLL_SECONDS: ${POLL_SECONDS:-30}
       STABLE_SECONDS: ${STABLE_SECONDS:-10}
       MAX_FINAL_BYTES: ${MAX_FINAL_BYTES:-104857600}

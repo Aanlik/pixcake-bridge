@@ -42,10 +42,15 @@ class Config:
     history_keep: int = 3
     materialize_mode: str = "auto"
     projects: list[ProjectConfig] = field(default_factory=list)
+    projects_file: Path = Path("/config/projects.json")
+    raw_root: Path = Path("/external-media/Camera")
+    delivery_root: Path = Path("/delivery")
+    delivery_host_root: str = ""
 
     @classmethod
     def load(cls):
-        projects = json.loads(Path(os.getenv("PROJECTS_FILE", "/config/projects.json")).read_text())
+        projects_file = Path(os.getenv("PROJECTS_FILE", "/config/projects.json"))
+        projects = json.loads(projects_file.read_text())
         cfg = cls(
             base_url=os.getenv("PICPEAK_URL", "http://picpeak:3000").rstrip("/"),
             token=os.getenv("PICPEAK_TOKEN", ""),
@@ -57,6 +62,10 @@ class Config:
             history_keep=int(os.getenv("HISTORY_KEEP", "3")),
             materialize_mode=os.getenv("RAW_MATERIALIZE_MODE", "auto"),
             projects=[ProjectConfig(**{**p, **{k: Path(p[k]) for k in ("raw", "selected", "final", "history")}}) for p in projects],
+            projects_file=projects_file,
+            raw_root=Path(os.getenv("RAW_ROOT", "/external-media/Camera")),
+            delivery_root=Path(os.getenv("DELIVERY_ROOT", "/delivery")),
+            delivery_host_root=os.getenv("DELIVERY_HOST_ROOT", ""),
         )
         if not cfg.token.startswith("pp_live_") or len(cfg.admin_password) < 12:
             raise ValueError("请配置 Public API Token 和至少 12 位的 Bridge 管理密码")

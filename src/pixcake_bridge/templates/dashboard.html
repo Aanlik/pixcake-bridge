@@ -1,16 +1,57 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PixCake Bridge · 精修同步</title>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PixCake Bridge · 精修同步</title>
 <style>
-:root{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#172524;background:#f3f5f2}body{max-width:1240px;margin:40px auto;padding:0 20px}h1{font-size:28px;margin-bottom:6px}p{color:#526561;line-height:1.6}section{background:white;border:1px solid #d9e1db;border-radius:14px;padding:24px;margin:24px 0}.head,.tools,.stats{display:flex;gap:14px;flex-wrap:wrap;align-items:center}.head{justify-content:space-between}.badge{padding:5px 12px;border-radius:20px;background:#e6f2e8;color:#226942}.bad{background:#fff0e7;color:#a54812}.stats{margin:22px 0}.stat{background:#f4f7f3;min-width:100px;padding:14px;border-radius:8px}.stat strong{display:block;font-size:26px}.stat span{font-size:13px;color:#526561}button,select{padding:9px 12px;border-radius:7px;border:1px solid #b8cabe;background:#fff;color:#203f32}button{cursor:pointer}.primary{background:#215c44;color:white}.table{overflow:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;border-bottom:1px solid #e5ebe6;padding:11px 8px}th{color:#526561}details{margin:20px 0}li{margin:8px 0;color:#9b411c}.muted{font-size:12px;color:#64716c}.error{color:#a54812}label{font-size:12px}h2{margin:0 0 4px}.state{font-weight:600}a{color:#226942}
-</style></head><body><h1>精修同步工作台</h1><p>客户选片 → 待精修 RAW → 像素蛋糕 → 成片交付</p>
+:root{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#172524;background:#f3f5f2}body{max-width:1240px;margin:40px auto;padding:0 20px}h1{font-size:28px;margin-bottom:6px}p{color:#526561;line-height:1.6}section{background:white;border:1px solid #d9e1db;border-radius:14px;padding:24px;margin:24px 0}.head,.tools,.stats{display:flex;gap:14px;flex-wrap:wrap;align-items:center}.head{justify-content:space-between}.badge{padding:5px 12px;border-radius:20px;background:#e6f2e8;color:#226942}.bad{background:#fff0e7;color:#a54812}.stats{margin:22px 0}.stat{background:#f4f7f3;min-width:100px;padding:14px;border-radius:8px}.stat strong{display:block;font-size:26px}.stat span{font-size:13px;color:#526561}button,select,input{padding:9px 12px;border-radius:7px;border:1px solid #b8cabe;background:#fff;color:#203f32}button{cursor:pointer}.primary{background:#215c44;color:white}.table{overflow:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;border-bottom:1px solid #e5ebe6;padding:11px 8px}th{color:#526561}details{margin:20px 0}li{margin:8px 0;color:#9b411c}.muted{font-size:12px;color:#64716c}.error{color:#a54812}label{font-size:12px}h2{margin:0 0 4px}.state{font-weight:600}a{color:#226942}.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:18px 0}.step{background:#f4f7f3;padding:14px;border-radius:9px}.step b{display:block;margin-bottom:6px}.setup{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;align-items:end}.setup label{display:grid;gap:6px}.path{font-family:ui-monospace,monospace;font-size:12px;overflow-wrap:anywhere;background:#f4f7f3;padding:9px;border-radius:7px}
+</style>
+</head>
+<body>
+<h1>精修同步工作台</h1><p>客户选片 → 待精修 RAW → 像素蛋糕 → 成片交付</p>
+
+<section>
+<h2>摄影师怎么接手客户选片</h2>
+<p>完成一次绑定后，Bridge 会持续同步客户的“选为精修”标记。像素蛋糕不需要 API：摄影师从 NAS 网络共享目录打开素材，导出成片到指定文件夹即可。</p>
+<div class="steps">
+  <div class="step"><b>1 · 客户选片</b>客户在 PicPeak 中勾选照片并标记“选为精修”。Bridge 通过 API 轮询标记状态。</div>
+  <div class="step"><b>2 · 自动准备素材</b>匹配 RAW 后生成到 <code>03_SELECTED_RAW</code>。原 RAW 与 Proof 保持只读；没有匹配或文件名冲突时会显示异常。</div>
+  <div class="step"><b>3 · 导入像素蛋糕</b>在电脑文件管理器中通过 NAS SMB 共享打开项目的 <code>03_SELECTED_RAW</code>，在像素蛋糕中选择“导入/添加文件夹”，选中该目录开始精修。</div>
+  <div class="step"><b>4 · 精修与导出</b>在像素蛋糕处理照片；按原文件主名导出 JPG/JPEG 到同一项目的 <code>04_FINAL</code>。若目录已打开但没看到新文件，请刷新或重新导入目录。</div>
+  <div class="step"><b>5 · 自动交付与返修</b>Bridge 等待文件写入稳定，计算 SHA-256 后用 PicPeak 替换原 Proof。客户原分享链接、评论和选片记录继续保留；同名文件再次导出会作为新返修版本。</div>
+</div>
+<p class="muted">首次使用需要先把 PicPeak 项目、Camera 中的 RAW 子目录和 NAS 交付目录绑定。创建后，在局域网电脑将 NAS 交付根目录添加为 SMB 网络位置。</p>
+</section>
+
+{% if project_setup_ready %}
+<section>
+<h2>绑定一个 PicPeak 项目</h2>
+{% if setup_error %}<p class="error">{{setup_error}}</p>{% endif %}
+<form class="setup" method="post" action="/projects">
+  <label>项目名称<input name="name" required maxlength="120" placeholder="例如：林先生婚礼" /></label>
+  <label>PicPeak 项目编号<input name="event_id" required type="number" min="1" placeholder="在 PicPeak 项目详情中查看" /></label>
+  <label>RAW 子目录（相对 Camera）<input name="raw_subdir" placeholder="例如：2026/林先生婚礼；根目录填 ." /></label>
+  <button class="primary" type="submit">验证并绑定目录</button>
+</form>
+<p class="muted">Bridge 只会从 Camera 读取 RAW；绑定后会在 NAS 交付根目录自动创建 <code>03_SELECTED_RAW</code>、<code>04_FINAL</code>、<code>05_HISTORY</code>。Proof 与 RAW 的主文件名必须能唯一对应；无法对应时工作台会提示异常。</p>
+</section>
+{% else %}
+<section><h2>项目绑定尚未就绪</h2><p class="error">Compose 尚未同时挂载 RAW 源目录（只读）和交付根目录（可写）。请按部署说明设置 Camera 与交付目录后重启服务。</p></section>
+{% endif %}
+
 {% for item in projects %}{% set p=item.project %}
-<section><div class="head"><div><h2>{{p.name}}</h2><span class="muted">PicPeak 画廊 #{{p.event_id}} · 上次同步 {{p.last_sync or '尚未同步'}}</span></div><div><span class="badge">{{stage_names[p.stage]}}</span> <span class="badge {% if not p.connected %}bad{% endif %}">{{'PicPeak 已连接' if p.connected else 'PicPeak 未连接'}}</span></div></div>
+<section>
+<div class="head"><div><h2>{{p.name}}</h2><span class="muted">PicPeak 项目 #{{p.event_id}} · 上次同步 {{p.last_sync or '尚未同步'}}</span></div><div><span class="badge">{{stage_names[p.stage]}}</span> <span class="badge {% if not p.connected %}bad{% endif %}">{{'PicPeak 已连接' if p.connected else 'PicPeak 未连接'}}</span></div></div>
 <div class="stats">{% for name,value in item.summary.items() %}<div class="stat"><strong>{{value}}</strong><span>{{name}}</span></div>{% endfor %}</div>
 <div class="tools"><form method="post" action="/projects/{{p.event_id}}/sync"><button class="primary">手动同步</button></form><form method="post" action="/projects/{{p.event_id}}/rescan"><button>重新扫描文件</button></form><form method="post" action="/projects/{{p.event_id}}/stage"><select name="stage">{% for stage in stages %}<option value="{{stage}}" {% if p.stage==stage %}selected{% endif %}>{{stage_names[stage]}}</option>{% endfor %}</select> <button>更新阶段</button></form></div>
-<p class="muted">进入精修阶段后，取消选片会保留待精修 RAW；归档后停止同步。阶段只能向前推进。</p>
+<p class="path">RAW（只读）：{{p.raw}} · 待精修：{{p.selected}} · 精修导出：{{p.final}} · 历史版本：{{p.history}}</p>
+{% if delivery_host_root %}<p class="path">NAS 文件管理器 / SMB 路径：{{delivery_host_root}}/{{p.selected.parent.name}}/03_SELECTED_RAW · {{delivery_host_root}}/{{p.selected.parent.name}}/04_FINAL</p>{% endif %}
+<p class="muted">进入精修阶段后，客户取消选片会保留待精修 RAW；归档后停止同步。阶段只能向前推进。像素蛋糕通过电脑的 NAS SMB 网络共享访问这些目录。</p>
 {% if item.errors %}<details open><summary>同步异常（最近 30 条）</summary><ul>{% for e in item.errors %}<li>{{e.message}}</li>{% endfor %}</ul><form method="post" action="/projects/{{p.event_id}}/retry"><label><input type="checkbox" name="confirm_unknown" value="checked" required> 已核对 PicPeak：结果未知的照片未替换成功，可以重试</label> <button>重试失败任务</button></form></details>{% endif %}
 <details open><summary>照片明细（{{item.photos|length}}）</summary><div class="table"><table><thead><tr><th>编号</th><th>相机文件名</th><th>客户选择</th><th>RAW 匹配</th><th>精修同步</th><th>异常</th></tr></thead><tbody>{% for x in item.photos %}<tr><td>{{x.photo_id}}</td><td>{{x.source_filename}}</td><td>{{('追加精修' if x.added_during_editing else '已选精修') if x.selected else ('已取消' if x.cancelled else '未选')}}</td><td>{{'已生成待精修 RAW' if x.selected_path else ('已匹配' if x.raw_path else '待匹配')}}</td><td>{{'已同步' if x.delivery_hash else '待精修'}}</td><td class="error">{{x.error or ''}}</td></tr>{% endfor %}</tbody></table></div></details>
 {% if item.deliveries %}<details><summary>成片版本与上传任务</summary><div class="table"><table><tr><th>照片</th><th>SHA256</th><th>状态</th><th>尝试次数</th><th>异常</th></tr>{% for d in item.deliveries %}<tr><td>{{d.photo_pk}}</td><td>{{d.sha256[:16]}}…</td><td>{{{'PENDING':'待上传','UPLOADING':'上传中','UNKNOWN':'结果未知','FAILED':'失败','SUCCESS':'已同步'}.get(d.state,d.state)}}</td><td>{{d.attempts}}</td><td>{{d.error or ''}}</td></tr>{% endfor %}</table></div></details>{% endif %}
 <details><summary>最近同步记录</summary><ul>{% for r in item.runs %}<li>{{r.started}} · {{'完成' if r.success else '存在异常/未完成'}}</li>{% endfor %}</ul></details>
-</section>{% else %}<section>尚未配置项目。请编辑 projects.json 后重启 Bridge。</section>{% endfor %}
-<p class="muted">仅供摄影师在局域网管理。像素蛋糕读取 03_SELECTED_RAW，导出时保留文件主名并保存到 04_FINAL。</p></body></html>
+</section>
+{% endfor %}
+<p class="muted">仅供摄影师在局域网管理。RAW、Proof 和成片源目录只读；Bridge 只写待精修目录、状态数据库与历史快照。</p>
+</body></html>

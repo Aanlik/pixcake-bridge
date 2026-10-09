@@ -1,17 +1,25 @@
 # docker compose -f compose.yaml -f compose.nas-camera.yaml up -d
 services:
   picpeak:
+    environment:
+      BRIDGE_UID: ${BRIDGE_UID:-1000}
+      BRIDGE_GID: ${BRIDGE_GID:-1000}
     # Match the owner-only NAS Camera directory without changing source permissions.
     entrypoint:
       - dumb-init
       - --
       - /bin/sh
       - -ec
-      - "sed -i 's/^nodejs:x:1001:/nodejs:x:${NAS_CAMERA_UID:-1000}:/' /etc/passwd; cp /config/projects.json /bridge-data/projects.json; chown 1001:1001 /bridge-data/projects.json; chmod 640 /bridge-data/projects.json; exec /opt/integrated/start.sh"
+      - "sed -i 's/^nodejs:x:1001:/nodejs:x:${NAS_CAMERA_UID:-1000}:/' /etc/passwd; [ -e /bridge-data/projects.json ] || cp /config/projects.json /bridge-data/projects.json; chown ${BRIDGE_UID:-1000}:${BRIDGE_GID:-1000} /bridge-data/projects.json; chmod 640 /bridge-data/projects.json; exec /opt/integrated/start.sh"
     volumes:
       - type: bind
         source: ${NAS_CAMERA_ROOT:?填写现有 NAS Camera 绝对路径}
         target: /external-media/Camera
         read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${NAS_DELIVERY_ROOT:?填写 NAS 交付目录绝对路径}
+        target: /delivery
         bind:
           create_host_path: false
