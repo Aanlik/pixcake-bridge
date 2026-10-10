@@ -1,6 +1,6 @@
 # PicPeak 简体中文 + PixCake Bridge 一体化版
 
-面向支持 Docker 的 NAS 与服务器，提供中文客户选片、已有照片文件夹关联、待精修 RAW 整理和精修成片交付。系统不依赖特定 NAS 品牌，也不调用修图软件 API。默认使用 **一个 Docker 镜像、一个容器**；PicPeak 和 Bridge 保留独立代码、进程和数据库，便于跟随官方更新。
+面向支持 Docker 的 NAS 与服务器，提供中文客户选片、已有照片文件夹关联、待精修 RAW 整理和精修成片交付。系统不依赖特定 NAS 品牌，也不调用修图软件 API。默认使用 **一个 Docker 镜像、一个容器**；PicPeak 和 Bridge 保留独立代码、进程和数据库，由本项目自行维护，不常规合并 PicPeak 官方更新。
 
 当前固定镜像：`picpeak-pixcake:3.134.1-zh.20-bridge.0.1.8`。摄影师和客户都在 PicPeak 操作；Bridge 是同一容器中的内部服务，不单独开放网页端口。
 
@@ -64,7 +64,7 @@ PicPeak 和 Bridge 对整个 Camera 根目录只读挂载；PicPeak 可从中选
 
 ### 2. 构建或导入镜像
 
-源码放在同一父目录，分别为 `picpeak-zh` 和 `pixcake-bridge`。获取中文 Fork `feat/zh-cn`，然后在 Bridge 仓库运行：
+源码放在同一父目录，分别为 `picpeak-zh` 和 `pixcake-bridge`。构建时使用本项目指定的 PicPeak Fork 提交，不要改用 PicPeak 官方仓库或官方镜像。生产发布应把 PicPeak 提交、Bridge 提交和一体化镜像版本一并记录。然后在 Bridge 仓库运行：
 
 ```sh
 ./docker/integrated/build.sh
@@ -142,9 +142,9 @@ Bridge 不会操作软件的项目、图库或编辑进度。追加 RAW 是否�
 
 第一次迁移应在卷副本上验证，确认 photo_id、评论、分享链接、Bridge 同步记录和 RAW 校验后，再替换正式容器。不要同时运行新旧同步服务，不要覆盖真实 Token。备份完整 `/data`，仅备份数据库会遗漏 JWT 密钥与媒体。
 
-## 后续统一更新与发布
+## 本项目自主管理与发布
 
-1. 在中文 Fork 同步 upstream stable，解决 locale/中文 UX 的窄范围冲突，执行翻译、前端、Docker 检查。
+1. 在 PicPeak Fork 中自行开发和修复，不合并官方分支；涉及安全修复时也要作为本项目变更单独审查和测试。
 2. 在 Bridge 更新依赖和测试，记录两个仓库的确定提交与版本。
 3. 更新 `build.sh`、Dockerfile、`.env.example`、Compose 和 README 的固定镜像版本。
 4. 构建一体化镜像，验证两个进程、初次禁用 Bridge、启用后健康检查、重启恢复以及选片→成片→返修流程。

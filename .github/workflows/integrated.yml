@@ -22,32 +22,32 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Aanlik/picpeak-zh
-          ref: feat/zh-cn
+          ref: 9e4e1c464120c1c6a6e7e78fe8f9a7acb1a75b67
           path: picpeak-source
       - name: Verify the pinned PicPeak source
-        run: test "$(git -C picpeak-source rev-parse HEAD)" = "a9bd2d984ec00d663ee1a3764e0bd4c2564adec1"
+        run: test "$(git -C picpeak-source rev-parse HEAD)" = "9e4e1c464120c1c6a6e7e78fe8f9a7acb1a75b67"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:
           context: picpeak-source
           file: picpeak-source/Dockerfile.aio
-          tags: picpeak-zh:3.134.1-zh.18
+          tags: picpeak-zh:3.134.1-zh.20
           load: true
           cache-from: type=gha,scope=integrated-picpeak
           cache-to: type=gha,mode=max,scope=integrated-picpeak
       - name: Combine independent services
-        run: docker build -f Dockerfile.integrated -t picpeak-pixcake:3.134.1-zh.18-bridge.0.1.6 .
+        run: docker build -f Dockerfile.integrated --build-arg PICPEAK_BASE=picpeak-zh:3.134.1-zh.20 --build-arg STACK_VERSION=3.134.1-zh.20-bridge.0.1.8 -t picpeak-pixcake:3.134.1-zh.20-bridge.0.1.8 .
       - name: Actual container smoke and restart
         run: ./docker/integrated/smoke.sh
       - name: Export NAS import archive
         if: github.event_name == 'workflow_dispatch' && inputs.publish
-        run: docker save -o picpeak-pixcake-amd64-3.134.1-zh.18-bridge.0.1.6.tar picpeak-pixcake:3.134.1-zh.18-bridge.0.1.6
+        run: docker save -o picpeak-pixcake-amd64-3.134.1-zh.20-bridge.0.1.8.tar picpeak-pixcake:3.134.1-zh.20-bridge.0.1.8
       - name: Keep NAS import archive for 7 days
         if: github.event_name == 'workflow_dispatch' && inputs.publish
         uses: actions/upload-artifact@v4
         with:
-          name: picpeak-pixcake-amd64-3.134.1-zh.18-bridge.0.1.6
-          path: picpeak-pixcake-amd64-3.134.1-zh.18-bridge.0.1.6.tar
+          name: picpeak-pixcake-amd64-3.134.1-zh.20-bridge.0.1.8
+          path: picpeak-pixcake-amd64-3.134.1-zh.20-bridge.0.1.8.tar
           retention-days: 7
       - name: Publish versioned package
         if: github.event_name == 'workflow_dispatch' && inputs.publish
@@ -56,6 +56,6 @@ jobs:
         run: |
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           owner=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
-          tag="ghcr.io/$owner/picpeak-pixcake:3.134.1-zh.18-bridge.0.1.6"
-          docker tag picpeak-pixcake:3.134.1-zh.18-bridge.0.1.6 "$tag"
+          tag="ghcr.io/$owner/picpeak-pixcake:3.134.1-zh.20-bridge.0.1.8"
+          docker tag picpeak-pixcake:3.134.1-zh.20-bridge.0.1.8 "$tag"
           docker push "$tag"
